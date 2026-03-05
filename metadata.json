@@ -1,0 +1,5 @@
+{
+  "name": "Asana to Meta Ads Automator",
+  "description": "Automate Meta Ads creation using data extracted from Asana tasks.",
+  "requestFramePermissions": []
+}

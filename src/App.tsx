@@ -43,8 +43,6 @@ interface AdSet {
   ageMax?: number;
   csvData?: string;
   csvName?: string;
-  pageId?: string;
-  instagramUserId?: string;
   ads: Ad[];
 }
 
@@ -55,7 +53,6 @@ interface CampaignBrief {
   startDate: string;
   endDate: string;
   budget: number;
-  adAccountId?: string;
   instagramUserId: string;
   adSets: AdSet[];
 }
@@ -99,8 +96,6 @@ export default function App() {
   };
 
   const [asanaUrl, setAsanaUrl] = useState('');
-  const [clientId, setClientId] = useState('palace-cinemas');
-  const [platform, setPlatform] = useState('meta');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [brief, setBrief] = useState<CampaignBrief>(createDefaultBrief());
@@ -113,9 +108,6 @@ export default function App() {
   const [shuffledTrivia, setShuffledTrivia] = useState<string[]>([]);
   const [triviaIndex, setTriviaIndex] = useState(0);
   const logEndRef = useRef<HTMLDivElement>(null);
-
-  const [metaAdAccounts, setMetaAdAccounts] = useState<any[]>([]);
-  const [metaPages, setMetaPages] = useState<any[]>([]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -142,26 +134,6 @@ export default function App() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
-
-  useEffect(() => {
-    if (platform === 'meta' && clientId) {
-      fetch(`/api/meta/ad-accounts?clientId=${clientId}`)
-        .then(res => res.json())
-        .then(data => setMetaAdAccounts(Array.isArray(data) ? data : []))
-        .catch(err => {
-          console.error("Failed to load ad accounts", err);
-          setMetaAdAccounts([]);
-        });
-
-      fetch(`/api/meta/pages?clientId=${clientId}`)
-        .then(res => res.json())
-        .then(data => setMetaPages(Array.isArray(data) ? data : []))
-        .catch(err => {
-          console.error("Failed to load pages", err);
-          setMetaPages([]);
-        });
-    }
-  }, [clientId, platform]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -255,10 +227,10 @@ export default function App() {
     setLogs(['Initializing launch process...']);
 
     try {
-      const response = await fetch('/api/launch-campaign', {
+      const response = await fetch('/api/process-asana', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, platform, brief }),
+        body: JSON.stringify({ brief }),
       });
 
       const data = await response.json();
@@ -341,26 +313,6 @@ export default function App() {
     });
   };
 
-  const handlePageChange = async (adSetId: string, pageId: string) => {
-    if (!brief) return;
-    
-    updateAdSet(adSetId, { pageId });
-
-    if (pageId) {
-      try {
-        const response = await fetch(`/api/meta/instagram-account?clientId=${clientId}&pageId=${pageId}`);
-        const igAccount = await response.json();
-        if (igAccount && igAccount.id) {
-          updateAdSet(adSetId, { instagramUserId: igAccount.id });
-        } else {
-          updateAdSet(adSetId, { instagramUserId: undefined });
-        }
-      } catch (err) {
-        console.error("Failed to fetch Instagram account", err);
-      }
-    }
-  };
-
   const updateAd = (adSetId: string, adId: string, updates: Partial<Ad>) => {
     if (!brief) return;
     setBrief({
@@ -390,17 +342,6 @@ export default function App() {
           </div>
           
           <div className="flex gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40">Platform</label>
-              <select 
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
-                className="bg-white border-none rounded-xl py-3 px-4 shadow-sm text-sm w-32 focus:ring-2 focus:ring-[#5A5A40] outline-none"
-              >
-                <option value="meta">Meta</option>
-                <option value="tiktok">TikTok</option>
-              </select>
-            </div>
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40">Asana Task URL</label>
               <input
@@ -513,21 +454,16 @@ export default function App() {
                         />
                       </div>
 
-                      {platform === 'meta' && (
-                        <div className="md:col-span-3">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Meta Ad Account</label>
-                          <select
-                            className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
-                            value={brief.adAccountId || ''}
-                            onChange={(e) => setBrief({ ...brief, adAccountId: e.target.value })}
-                          >
-                            <option value="">Select Ad Account...</option>
-                            {metaAdAccounts.map(acc => (
-                              <option key={acc.id} value={acc.id}>{acc.name} ({acc.id})</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                      <div className="col-span-1">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Instagram Page</label>
+                        <select
+                          className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
+                          value={brief.instagramUserId}
+                          onChange={(e) => setBrief({ ...brief, instagramUserId: e.target.value })}
+                        >
+                          <option value="102615919157239">Palace Cinemas</option>
+                        </select>
+                      </div>
                     </div>
                   </section>
 
@@ -595,31 +531,6 @@ export default function App() {
                               initialLocations={adSet.locations}
                               onLocationsChange={(locations) => updateAdSet(adSet.id, { locations })}
                             />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Facebook Page</label>
-                              <select
-                                className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
-                                value={adSet.pageId || ''}
-                                onChange={(e) => handlePageChange(adSet.id, e.target.value)}
-                              >
-                                <option value="">Select Page...</option>
-                                {metaPages.map(page => (
-                                  <option key={page.id} value={page.id}>{page.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Instagram Account</label>
-                              <input
-                                type="text"
-                                readOnly
-                                className="w-full bg-[#F5F5F0]/50 border-none rounded-2xl py-4 px-6 outline-none text-sm font-medium text-[#5A5A40]/60"
-                                value={adSet.instagramUserId || 'Auto-selected from Page'}
-                              />
-                            </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-4">

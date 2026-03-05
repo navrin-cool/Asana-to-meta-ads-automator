@@ -37,24 +37,43 @@ interface Ad {
 interface AdSet {
   id: string;
   name: string;
+  platformAccountId: string;
   copyTargetingFromAdSetId?: string;
   locations: string[];
   ageMin?: number;
   ageMax?: number;
+  budget?: number;
   csvData?: string;
   csvName?: string;
   ads: Ad[];
 }
 
 interface CampaignBrief {
+  clientId: string;
   movieName: string;
   campaignName: string;
   objective: string;
   startDate: string;
   endDate: string;
   budget: number;
-  instagramUserId: string;
+  budgetType: 'campaign' | 'adset';
   adSets: AdSet[];
+}
+
+interface Brand {
+  id: number;
+  client_id: number;
+  brand_name: string;
+  meta_page_id: string;
+  instagram_page_id: string;
+  meta_ad_account_id: string;
+  meta_pixel_id: string;
+}
+
+interface Client {
+  id: number;
+  name: string;
+  brands: Brand[];
 }
 
 export default function App() {
@@ -65,17 +84,19 @@ export default function App() {
     const defaultUrlParams = "utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}";
     
     return {
+      clientId: '',
       movieName: '',
       campaignName: 'New Campaign',
       objective: 'Sales',
       startDate: today,
       endDate: nextWeek,
       budget: 1000,
-      instagramUserId: '102615919157239',
+      budgetType: 'campaign',
       adSets: [
         {
           id: Math.random().toString(36).substr(2, 9),
           name: 'Ad Set 1',
+          platformAccountId: '',
           locations: [],
           ads: [
             {
@@ -107,6 +128,7 @@ export default function App() {
   const [minimizedAdSets, setMinimizedAdSets] = useState<Record<string, boolean>>({});
   const [shuffledTrivia, setShuffledTrivia] = useState<string[]>([]);
   const [triviaIndex, setTriviaIndex] = useState(0);
+  const [clients, setClients] = useState<Client[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -125,6 +147,20 @@ export default function App() {
   }, [isLaunching]);
 
   useEffect(() => {
+    fetch('/api/clients')
+      .then(res => res.json())
+      .then(data => {
+        setClients(data);
+        if (data.length > 0) {
+          const firstClient = data[0];
+          setBrief(prev => ({
+            ...prev,
+            clientId: firstClient.id.toString()
+          }));
+        }
+      })
+      .catch(err => console.error("Failed to load clients", err));
+
     fetch('/api/locations')
       .then(res => res.json())
       .then(data => setAvailableLocations(data))
@@ -168,7 +204,7 @@ export default function App() {
       const response = await fetch('/api/fetch-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asanaUrl, csvData: csvText, csvName }),
+        body: JSON.stringify({ asanaUrl, csvData: csvText, csvName, clientId: brief.clientId }),
       });
 
       const data = await response.json();
@@ -177,17 +213,19 @@ export default function App() {
       const defaultUrlParams = "utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}";
       
       const initialBrief: CampaignBrief = {
+        clientId: brief.clientId,
         movieName: data.movieName || data.movieTitle,
         campaignName: `Campaign: ${data.movieName || data.movieTitle}`,
         objective: data.objective,
         startDate: data.startDate?.split('T')[0] || '',
         endDate: data.endDate?.split('T')[0] || '',
         budget: data.budget,
-        instagramUserId: '102615919157239',
+        budgetType: 'campaign',
         adSets: [
           {
             id: Math.random().toString(36).substr(2, 9),
             name: `Ad Set: ${data.movieName || data.movieTitle}`,
+            platformAccountId: '', // User will select
             locations: data.locations,
             csvData: data.csvData,
             csvName: data.csvName,
@@ -252,6 +290,7 @@ export default function App() {
     const newAdSet: AdSet = {
       id: Math.random().toString(36).substr(2, 9),
       name: `New Ad Set ${brief.adSets.length + 1}`,
+      platformAccountId: sourceAdSet.platformAccountId,
       locations: [...sourceAdSet.locations],
       ads: sourceAdSet.ads.map(ad => ({
         ...ad,
@@ -388,6 +427,26 @@ export default function App() {
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                       <div className="col-span-1">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Client</label>
+                        <select
+                          className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
+                          value={brief.clientId}
+                          onChange={(e) => {
+                            const clientId = e.target.value;
+                            setBrief({ 
+                              ...brief, 
+                              clientId,
+                              adSets: brief.adSets.map(as => ({ ...as, platformAccountId: '' }))
+                            });
+                          }}
+                        >
+                          <option value="">Select Client...</option>
+                          {clients.map(client => (
+                            <option key={client.id} value={client.id}>{client.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-span-1">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Movie Name</label>
                         <input
                           type="text"
@@ -395,6 +454,23 @@ export default function App() {
                           value={brief.movieName}
                           onChange={(e) => setBrief({ ...brief, movieName: e.target.value })}
                         />
+                      </div>
+                      <div className="col-span-1">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Budget Type</label>
+                        <div className="flex bg-[#F5F5F0] p-1 rounded-2xl h-[60px]">
+                          <button
+                            onClick={() => setBrief({ ...brief, budgetType: 'campaign' })}
+                            className={`flex-1 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${brief.budgetType === 'campaign' ? 'bg-white text-[#5A5A40] shadow-sm' : 'text-[#5A5A40]/40 hover:text-[#5A5A40]'}`}
+                          >
+                            Campaign (CBO)
+                          </button>
+                          <button
+                            onClick={() => setBrief({ ...brief, budgetType: 'adset' })}
+                            className={`flex-1 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${brief.budgetType === 'adset' ? 'bg-white text-[#5A5A40] shadow-sm' : 'text-[#5A5A40]/40 hover:text-[#5A5A40]'}`}
+                          >
+                            Ad Set (ABO)
+                          </button>
+                        </div>
                       </div>
                       <div className="col-span-2">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Campaign Name</label>
@@ -442,28 +518,19 @@ export default function App() {
                           onChange={(e) => setBrief({ ...brief, endDate: e.target.value })}
                         />
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 flex items-center gap-1">
-                          <DollarSign size={12} /> Lifetime Budget
-                        </label>
-                        <input
-                          type="number"
-                          className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                          value={brief.budget}
-                          onChange={(e) => setBrief({ ...brief, budget: parseFloat(e.target.value) })}
-                        />
-                      </div>
-
-                      <div className="col-span-1">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Instagram Page</label>
-                        <select
-                          className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
-                          value={brief.instagramUserId}
-                          onChange={(e) => setBrief({ ...brief, instagramUserId: e.target.value })}
-                        >
-                          <option value="102615919157239">Palace Cinemas</option>
-                        </select>
-                      </div>
+                      {brief.budgetType === 'campaign' && (
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 flex items-center gap-1">
+                            <DollarSign size={12} /> Campaign Lifetime Budget
+                          </label>
+                          <input
+                            type="number"
+                            className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
+                            value={brief.budget}
+                            onChange={(e) => setBrief({ ...brief, budget: parseFloat(e.target.value) })}
+                          />
+                        </div>
+                      )}
                     </div>
                   </section>
 
@@ -512,6 +579,19 @@ export default function App() {
                             />
                           </div>
                           <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Brand / Account</label>
+                            <select
+                              className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
+                              value={adSet.platformAccountId}
+                              onChange={(e) => updateAdSet(adSet.id, { platformAccountId: e.target.value })}
+                            >
+                              <option value="">Select Brand...</option>
+                              {clients.find(c => c.id.toString() === brief.clientId)?.brands.map(brand => (
+                                <option key={brand.id} value={brand.id}>{brand.brand_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Copy Targeting From Ad Set ID (Optional)</label>
                             <div className="relative">
                               <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#5A5A40]/40">
@@ -526,8 +606,25 @@ export default function App() {
                               />
                             </div>
                           </div>
+                          {brief.budgetType === 'adset' && (
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Ad Set Lifetime Budget</label>
+                              <div className="relative">
+                                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#5A5A40]/40">
+                                  <DollarSign size={14} />
+                                </div>
+                                <input
+                                  type="number"
+                                  className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 pl-10 pr-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium"
+                                  value={adSet.budget || 0}
+                                  onChange={(e) => updateAdSet(adSet.id, { budget: parseFloat(e.target.value) })}
+                                />
+                              </div>
+                            </div>
+                          )}
                           <div className="col-span-2">
                             <LocationSearch 
+                              brandId={adSet.platformAccountId}
                               initialLocations={adSet.locations}
                               onLocationsChange={(locations) => updateAdSet(adSet.id, { locations })}
                             />

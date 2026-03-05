@@ -3,8 +3,201 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import crypto from "crypto";
+import Database from "better-sqlite3";
+import fs from "fs";
+import { parse } from "csv-parse/sync";
 
 dotenv.config();
+
+const db = new Database("campaign_automator.db");
+
+// Initialize Database Tables
+db.exec(`
+  DROP TABLE IF EXISTS locations;
+  DROP TABLE IF EXISTS brands;
+  DROP TABLE IF EXISTS clients;
+
+  CREATE TABLE clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE,
+    meta_ad_account_id TEXT,
+    meta_access_token TEXT,
+    meta_pixel_id TEXT,
+    asana_pat TEXT
+  );
+
+  CREATE TABLE brands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER,
+    brand_name TEXT,
+    meta_page_id TEXT,
+    instagram_page_id TEXT,
+    tiktok_page_id TEXT,
+    tiktok_ad_account_id TEXT,
+    tiktok_pixel_id TEXT,
+    tiktok_access_token TEXT,
+    UNIQUE(client_id, brand_name),
+    FOREIGN KEY (client_id) REFERENCES clients(id)
+  );
+
+  CREATE TABLE locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER,
+    cinema_name TEXT,
+    latitude REAL,
+    longitude REAL,
+    radius INTEGER,
+    distance_unit TEXT,
+    json_snippet TEXT,
+    UNIQUE(brand_id, cinema_name),
+    FOREIGN KEY (brand_id) REFERENCES brands(id)
+  );
+`);
+
+// Seeding Function
+const seedDatabase = () => {
+  console.log("Seeding database from CSV files...");
+  
+  try {
+    // 1. Seed Clients and Brands
+    const brandsCsvPath = "./data/Automated Ads Setup Tool - Page_Profile IDs.csv";
+    if (fs.existsSync(brandsCsvPath)) {
+      const brandsContent = fs.readFileSync(brandsCsvPath, "utf-8");
+      const brandsRecords = parse(brandsContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true
+      });
+
+      for (const record of brandsRecords as any[]) {
+        // Insert/Update Client
+        const clientName = record.CLIENT_NAME;
+        if (!clientName) continue;
+
+        // CRITICAL FIX: Meta Ad Account ID formatting
+        let metaAdAccountId = record.META_AD_ACCOUNT_ID;
+        if (metaAdAccountId && metaAdAccountId.startsWith("act=")) {
+          metaAdAccountId = metaAdAccountId.replace("=", "_");
+        } else if (metaAdAccountId && !metaAdAccountId.startsWith("act_")) {
+          metaAdAccountId = `act_${metaAdAccountId}`;
+        }
+
+        db.prepare(`
+          INSERT INTO clients (name, meta_ad_account_id, meta_access_token, meta_pixel_id, asana_pat)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(name) DO UPDATE SET
+            meta_ad_account_id = excluded.meta_ad_account_id,
+            meta_access_token = excluded.meta_access_token,
+            meta_pixel_id = excluded.meta_pixel_id,
+            asana_pat = excluded.asana_pat
+        `).run(
+          clientName,
+          metaAdAccountId,
+          record.META_ACCESS_TOKEN,
+          record.META_PIXEL_ID,
+          record.ASANA_PAT
+        );
+
+        const client = db.prepare("SELECT id FROM clients WHERE name = ?").get(clientName) as any;
+        const clientId = client.id;
+
+        // Insert/Replace Brand
+        db.prepare(`
+          INSERT INTO brands (
+            client_id, brand_name, meta_page_id, instagram_page_id, tiktok_page_id,
+            tiktok_ad_account_id, tiktok_pixel_id, tiktok_access_token
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(client_id, brand_name) DO UPDATE SET
+            meta_page_id = excluded.meta_page_id,
+            instagram_page_id = excluded.instagram_page_id,
+            tiktok_page_id = excluded.tiktok_page_id,
+            tiktok_ad_account_id = excluded.tiktok_ad_account_id,
+            tiktok_pixel_id = excluded.tiktok_pixel_id,
+            tiktok_access_token = excluded.tiktok_access_token
+        `).run(
+          clientId,
+          record.BRAND_NAME,
+          record.META_PAGE_ID,
+          record.INSTAGRAM_PAGE_ID,
+          record.TIKTOK_PAGE_ID,
+          record.TIKTOK_AD_ACCOUNT_ID,
+          record.TIKTOK_PIXEL_ID,
+          record.TIKTOK_ACCESS_TOKEN
+        );
+      }
+      console.log("Brands seeded successfully.");
+    }
+
+    // 2. Seed Locations
+    const locationsCsvPath = "./data/Automated Ads Setup Tool - Locations.csv";
+    if (fs.existsSync(locationsCsvPath)) {
+      const locationsContent = fs.readFileSync(locationsCsvPath, "utf-8");
+      const locationsRecords = parse(locationsContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true
+      });
+
+      console.log(`Found ${locationsRecords.length} location records in CSV.`);
+      if (locationsRecords.length > 0) {
+        console.log("CSV Headers:", Object.keys(locationsRecords[0]));
+      }
+
+      let seededCount = 0;
+      for (const record of locationsRecords as any[]) {
+        const clientName = record.CLIENT_NAME;
+        const brandName = record.BRAND_NAME;
+        if (!clientName || !brandName) {
+          console.log("Skipping record due to missing client/brand name:", record);
+          continue;
+        }
+
+        const client = db.prepare("SELECT id FROM clients WHERE name = ?").get(clientName) as any;
+        if (!client) {
+          console.log(`Client not found for location seed: "${clientName}"`);
+          continue;
+        }
+        
+        const brand = db.prepare("SELECT id FROM brands WHERE client_id = ? AND brand_name = ?").get(client.id, brandName) as any;
+        if (!brand) {
+          console.log(`Brand not found for location seed: "${brandName}" (Client: "${clientName}")`);
+          continue;
+        }
+
+        try {
+          db.prepare(`
+            INSERT INTO locations (
+              brand_id, cinema_name, latitude, longitude, radius, distance_unit, json_snippet
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(brand_id, cinema_name) DO UPDATE SET
+              latitude = excluded.latitude,
+              longitude = excluded.longitude,
+              radius = excluded.radius,
+              distance_unit = excluded.distance_unit,
+              json_snippet = excluded.json_snippet
+          `).run(
+            brand.id,
+            record["Cinema Name"],
+            parseFloat(record.Latitude),
+            parseFloat(record.Longitude),
+            parseInt(record.Radius),
+            record["Distance Unit"],
+            record["JSON Snippet"]
+          );
+          seededCount++;
+        } catch (e: any) {
+          console.error(`Failed to insert location ${record["Cinema Name"]}:`, e.message);
+        }
+      }
+      console.log(`Locations seeded successfully. Total: ${seededCount}`);
+    }
+  } catch (error) {
+    console.error("Error seeding database:", error);
+  }
+};
+
+seedDatabase();
 
 const app = express();
 const PORT = 3000;
@@ -40,6 +233,146 @@ const getDownloadUrl = (url: string) => {
   
   return cleanUrl;
 };
+
+// Meta Ads Service
+class MetaAdsService {
+  private token: string;
+  private adAccountId: string;
+  private pixelId: string;
+  private addStatus: (msg: string) => void;
+
+  constructor(creds: any, addStatus: (msg: string) => void) {
+    this.token = creds.meta_access_token;
+    this.adAccountId = creds.meta_ad_account_id;
+    this.pixelId = creds.meta_pixel_id;
+    this.addStatus = addStatus;
+
+    if (this.adAccountId && !this.adAccountId.startsWith('act_')) {
+      this.adAccountId = `act_${this.adAccountId}`;
+    }
+  }
+
+  async createCampaign(name: string, objective: string, budget: number, budgetType: 'campaign' | 'adset' = 'campaign') {
+    this.addStatus(`Creating Meta Campaign: ${name} (${budgetType === 'campaign' ? 'CBO' : 'ABO'})...`);
+    
+    let metaObjective = "OUTCOME_SALES";
+    if (objective === "Reach") metaObjective = "OUTCOME_AWARENESS";
+    else if (objective === "Traffic") metaObjective = "OUTCOME_TRAFFIC";
+    else if (objective === "Engagement" || objective === "Video Views") metaObjective = "OUTCOME_ENGAGEMENT";
+
+    const payload: any = {
+      name,
+      objective: metaObjective,
+      status: "PAUSED",
+      special_ad_categories: ["NONE"],
+    };
+
+    if (budgetType === 'campaign') {
+      payload.bid_strategy = "LOWEST_COST_WITHOUT_CAP";
+      payload.lifetime_budget = Math.max(budget, 100) * 100;
+    }
+
+    const response = await fetch(`https://graph.facebook.com/v19.0/${this.adAccountId}/campaigns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        access_token: this.token
+      })
+    });
+    const result = await response.json() as any;
+    if (result.error) throw new Error(`Meta Campaign Error: ${result.error.message}`);
+    return result.id;
+  }
+
+  async createAdSet(payload: any) {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${this.adAccountId}/adsets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, access_token: this.token })
+    });
+    const result = await response.json() as any;
+    if (result.error) throw new Error(`Meta Ad Set Error: ${result.error.message}`);
+    return result.id;
+  }
+
+  async uploadVideo(url: string) {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${this.adAccountId}/advideos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_url: url, access_token: this.token })
+    });
+    const result = await response.json() as any;
+    if (result.error) throw new Error(`Video Upload Error: ${result.error.message}`);
+    return result.id;
+  }
+
+  async createCreative(payload: any) {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${this.adAccountId}/adcreatives`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, access_token: this.token })
+    });
+    const result = await response.json() as any;
+    if (result.error) throw new Error(`Creative Error: ${result.error.message}`);
+    return result.id;
+  }
+
+  async createAd(payload: any) {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${this.adAccountId}/ads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, access_token: this.token })
+    });
+    const result = await response.json() as any;
+    if (result.error) throw new Error(`Ad Error: ${result.error.message}`);
+    return result.id;
+  }
+
+  async createCustomAudience(name: string, subtype: string = "CUSTOM", rule?: any) {
+    const body: any = { name, subtype, access_token: this.token };
+    if (subtype === "CUSTOM") body.customer_file_source = "USER_PROVIDED_ONLY";
+    if (subtype === "WEBSITE") {
+      body.pixel_id = this.pixelId;
+      body.rule = JSON.stringify(rule);
+      body.prefill = true;
+    }
+
+    const response = await fetch(`https://graph.facebook.com/v19.0/${this.adAccountId}/customaudiences`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const result = await response.json() as any;
+    if (result.error) throw new Error(`Audience Error: ${result.error.message}`);
+    return result.id;
+  }
+
+  async addUsersToAudience(audienceId: string, hashedEmails: string[]) {
+    await fetch(`https://graph.facebook.com/v19.0/${audienceId}/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payload: { schema: ["EMAIL"], data: hashedEmails },
+        access_token: this.token
+      })
+    });
+  }
+
+  async getExistingCreative(adId: string) {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${adId}?fields=creative&access_token=${this.token}`);
+    const data = await response.json() as any;
+    return data.creative?.id;
+  }
+
+  getCredentials() {
+    return {
+      token: this.token,
+      adAccountId: this.adAccountId,
+      pixelId: this.pixelId
+    };
+  }
+}
 
 // Helper to wait for Meta video processing with polling
 const waitForVideoProcessing = async (videoId: string, metaToken: string, addStatus: (msg: string) => void) => {
@@ -81,51 +414,30 @@ const waitForVideoProcessing = async (videoId: string, metaToken: string, addSta
   return false;
 };
 
-// Helper to fetch location data from Google Sheet
-const fetchLocationData = async () => {
+// Helper to fetch location data from Database
+const fetchLocationData = async (brandId?: string) => {
   try {
-    // The user provided a specific CSV structure. We'll use the hardcoded list as primary source
-    // to ensure 100% reliability as requested.
-    const csvContent = `Cinema Name,Latitude,Longitude,Radius,Distance Unit,JSON Snippet
-Palace Balwyn,-37.8123,145.0784,16,kilometer,"{""latitude"":-37.8123,""longitude"":145.0784,""radius"":16,""distance_unit"":""kilometer""}"
-The Astor,-37.8584,144.9928,16,kilometer,"{""latitude"":-37.8584,""longitude"":144.9928,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Brighton Bay,-37.8997,144.9996,16,kilometer,"{""latitude"":-37.8997,""longitude"":144.9996,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Cinema Como,-37.8398,144.9942,16,kilometer,"{""latitude"":-37.8398,""longitude"":144.9942,""radius"":16,""distance_unit"":""kilometer""}"
-Kino Cinema,-37.814,144.9723,16,kilometer,"{""latitude"":-37.814,""longitude"":144.9723,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Westgarth,-37.7812,144.9959,16,kilometer,"{""latitude"":-37.7812,""longitude"":144.9959,""radius"":16,""distance_unit"":""kilometer""}"
-Pentridge Cinema,-37.7479,144.9702,16,kilometer,"{""latitude"":-37.7479,""longitude"":144.9702,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Penny Lane,-37.7663,144.9248,16,kilometer,"{""latitude"":-37.7663,""longitude"":144.9248,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Norton Street,-33.8824,151.1565,16,kilometer,"{""latitude"":-33.8824,""longitude"":151.1565,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Central,-33.8841,151.2007,16,kilometer,"{""latitude"":-33.8841,""longitude"":151.2007,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Moore Park,-33.8943,151.2238,16,kilometer,"{""latitude"":-33.8943,""longitude"":151.2238,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Ballina Fair,-28.8601,153.5497,16,kilometer,"{""latitude"":-28.8601,""longitude"":153.5497,""radius"":16,""distance_unit"":""kilometer""}"
-Palace James St,-27.4586,153.0401,16,kilometer,"{""latitude"":-27.4586,""longitude"":153.0401,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Barracks,-27.4661,153.0152,16,kilometer,"{""latitude"":-27.4661,""longitude"":153.0152,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Byron Bay,-28.6441,153.612,16,kilometer,"{""latitude"":-28.6441,""longitude"":153.612,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Electric,-35.2852,149.1241,16,kilometer,"{""latitude"":-35.2852,""longitude"":149.1241,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Raine Square,-31.9519,115.8562,16,kilometer,"{""latitude"":-31.9519,""longitude"":115.8562,""radius"":16,""distance_unit"":""kilometer""}"
-Regent Ballarat,-37.5615,143.8587,16,kilometer,"{""latitude"":-37.5615,""longitude"":143.8587,""radius"":16,""distance_unit"":""kilometer""}"
-Palace Church St,-37.9155,144.9921,16,kilometer,"{""latitude"":-37.9155,""longitude"":144.9921,""radius"":16,""distance_unit"":""kilometer""}"`;
+    let query = "SELECT * FROM locations";
+    let params: any[] = [];
+    
+    if (brandId && brandId !== "") {
+      query += " WHERE brand_id = ?";
+      params.push(parseInt(brandId));
+    }
+
+    const rows = db.prepare(query).all(...params) as any[];
+    console.log(`Fetched ${rows.length} locations for brandId: ${brandId || 'all'}`);
 
     const locationMap: Record<string, any> = {};
     const displayNames: Record<string, string> = {};
     
-    const lines = csvContent.split(/\r?\n/).filter(line => line.trim());
-    
-    lines.slice(1).forEach(line => {
-      // Find the last comma which starts the JSON snippet
-      const lastQuoteIndex = line.lastIndexOf('"{');
-      if (lastQuoteIndex !== -1) {
-        const namePart = line.substring(0, line.indexOf(',')).trim();
-        const jsonPart = line.substring(lastQuoteIndex + 1, line.length - 1).replace(/""/g, '"');
-        
-        const nameKey = namePart.toLowerCase();
-        try {
-          locationMap[nameKey] = JSON.parse(jsonPart);
-          displayNames[nameKey] = namePart;
-        } catch (e) {
-          console.error(`Failed to parse JSON for ${namePart}:`, e);
-        }
+    rows.forEach(row => {
+      const nameKey = row.cinema_name.toLowerCase();
+      try {
+        locationMap[nameKey] = JSON.parse(row.json_snippet);
+        displayNames[nameKey] = row.cinema_name;
+      } catch (e) {
+        console.error(`Failed to parse JSON for ${row.cinema_name}:`, e);
       }
     });
 
@@ -142,9 +454,23 @@ const hashData = (data: string) => {
 };
 
 // API Routes
+app.get("/api/clients", (req, res) => {
+  try {
+    const clients = db.prepare("SELECT * FROM clients").all() as any[];
+    const result = clients.map(client => {
+      const brands = db.prepare("SELECT * FROM brands WHERE client_id = ?").all(client.id);
+      return { ...client, brands };
+    });
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/locations", async (req, res) => {
   try {
-    const { displayNames } = await fetchLocationData();
+    const brandId = req.query.brandId as string;
+    const { displayNames } = await fetchLocationData(brandId);
     const locationNames = Object.values(displayNames).sort();
     res.json(locationNames);
   } catch (error: any) {
@@ -153,9 +479,12 @@ app.get("/api/locations", async (req, res) => {
 });
 
 app.post("/api/fetch-brief", async (req, res) => {
-  const { asanaUrl, csvData, csvName } = req.body;
+  const { asanaUrl, csvData, csvName, clientId } = req.body;
   try {
-    const ASANA_PAT = process.env.ASANA_PAT;
+    const client = db.prepare("SELECT * FROM clients WHERE id = ?").get(clientId) as any;
+    if (!client) throw new Error("Client not found");
+
+    const ASANA_PAT = client.asana_pat || process.env.ASANA_PAT;
     if (!ASANA_PAT) throw new Error("Missing ASANA_PAT");
 
     const taskIdMatch = asanaUrl.match(/asana\.com\/(?:.*\/task\/|0\/\d+\/)(\d+)/);
@@ -199,7 +528,7 @@ app.post("/api/fetch-brief", async (req, res) => {
       verticalVideoUrl: getDownloadUrl(getField("Vertical Video 1")),
       csvData,
       csvName,
-      instagramUserId: getField("Instagram Page ID") || "102615919157239"
+      instagramUserId: getField("Instagram Page ID") || ""
     };
 
     res.json(brief);
@@ -218,108 +547,25 @@ app.post("/api/process-asana", async (req, res) => {
   };
 
   try {
-    const META_TOKEN = process.env.META_ACCESS_TOKEN;
-    let AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID;
-    const PAGE_ID = process.env.META_PAGE_ID;
+    const client = db.prepare("SELECT * FROM clients WHERE id = ?").get(brief.clientId) as any;
+    if (!client) throw new Error("Client not found in database.");
 
-    if (!META_TOKEN || !AD_ACCOUNT_ID) {
-      return res.status(400).json({ error: "Missing API configuration in environment variables." });
-    }
+    const metaService = new MetaAdsService(client, addStatus);
+    const creds = metaService.getCredentials();
 
-    // Ensure AD_ACCOUNT_ID starts with 'act_'
-    if (!AD_ACCOUNT_ID.startsWith('act_')) {
-      AD_ACCOUNT_ID = `act_${AD_ACCOUNT_ID}`;
-    }
-
-    const { movieName, campaignName, objective, startDate, endDate, budget, instagramUserId, adSets } = brief;
-    const INSTAGRAM_ID = instagramUserId || "102615919157239";
-
-    // Step 1: Create Campaign
-    addStatus(`Creating Meta Campaign: ${campaignName}...`);
+    const { movieName, campaignName, objective, startDate, endDate, budget, budgetType, adSets } = brief;
     
-    // Objective Mapping
-    let metaObjective = "OUTCOME_SALES";
-    let optimizationGoal = "OFFSITE_CONVERSIONS";
-    let attributionSpec = null;
-    let promotedObject = null;
-
-    // Attribution settings: 7-day click, 1-day engaged-view, 1-day view
-    const standardAttribution = [
-      { event_type: "CLICK_THROUGH", window_days: 7 },
-      { event_type: "VIEW_THROUGH", window_days: 1 },
-      { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 }
-    ];
-
-    if (objective === "Sales") {
-      metaObjective = "OUTCOME_SALES";
-      optimizationGoal = "OFFSITE_CONVERSIONS";
-      attributionSpec = standardAttribution;
-      promotedObject = { pixel_id: "627590211536590", custom_event_type: "PURCHASE" };
-    } else if (objective === "Reach") {
-      metaObjective = "OUTCOME_AWARENESS";
-      optimizationGoal = "REACH";
-    } else if (objective === "Traffic") {
-      metaObjective = "OUTCOME_TRAFFIC";
-      optimizationGoal = "LINK_CLICKS";
-    } else if (objective === "Engagement") {
-      metaObjective = "OUTCOME_ENGAGEMENT";
-      optimizationGoal = "POST_ENGAGEMENT";
-    } else if (objective === "Video Views") {
-      metaObjective = "OUTCOME_ENGAGEMENT";
-      optimizationGoal = "THRUPLAY";
-    }
-
-    // Validate dates
-    if (!startDate || !endDate) {
-      throw new Error("Campaign start and end dates are required.");
-    }
-
-    // Ensure dates are in the future for Meta API
-    const now = new Date();
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    let adjustedStartTime = startDate;
-    let adjustedEndTime = endDate;
-
-    // If start is in the past, move to 10 mins from now
-    if (start < now) {
-      adjustedStartTime = new Date(now.getTime() + 600000).toISOString();
-      addStatus(`Adjusting start time to ${adjustedStartTime} (was in the past).`);
-    }
-
-    // If end is in the past or before start, move to at least 1 hour after start
-    const minEnd = new Date(new Date(adjustedStartTime).getTime() + 3600000); 
-    if (end < minEnd) {
-      adjustedEndTime = new Date(new Date(adjustedStartTime).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      addStatus(`Adjusting end time to ${adjustedEndTime} (was in the past or too close to start).`);
-    }
-
-    const campaignResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/campaigns`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: campaignName,
-        objective: metaObjective,
-        status: "PAUSED",
-        special_ad_categories: ["NONE"], // Use "NONE" instead of [] for better compatibility
-        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-        lifetime_budget: Math.max(budget, 100) * 100, 
-        access_token: META_TOKEN
-      })
-    });
-    const campaignResult = await campaignResponse.json() as any;
-    if (campaignResult.error) {
-      console.error("Meta Campaign Error Detail:", JSON.stringify(campaignResult.error, null, 2));
-      throw new Error(`Meta Campaign Error: ${campaignResult.error.message} (Type: ${campaignResult.error.type})`);
-    }
-    const campaignId = campaignResult.id;
+    // Step 1: Create Campaign
+    const campaignId = await metaService.createCampaign(campaignName, objective, budget, budgetType);
 
     // Step 2: Process Ad Sets
-    const { locationMap } = await fetchLocationData();
-
     for (const adSet of adSets) {
       addStatus(`Processing Ad Set: ${adSet.name}...`);
+
+      const brand = db.prepare("SELECT * FROM brands WHERE id = ?").get(adSet.platformAccountId) as any;
+      if (!brand) throw new Error(`Brand not found for Ad Set: ${adSet.name}`);
+
+      const { locationMap } = await fetchLocationData(brand.id.toString());
 
       // A: Targeting
       let targeting: any = {
@@ -331,17 +577,15 @@ app.post("/api/process-asana", async (req, res) => {
 
       if (adSet.copyTargetingFromAdSetId) {
         addStatus(`Copying targeting from Ad Set ID: ${adSet.copyTargetingFromAdSetId}...`);
-        const copyResponse = await fetch(`https://graph.facebook.com/v19.0/${adSet.copyTargetingFromAdSetId}?fields=targeting&access_token=${META_TOKEN}`);
+        const copyResponse = await fetch(`https://graph.facebook.com/v19.0/${adSet.copyTargetingFromAdSetId}?fields=targeting&access_token=${creds.token}`);
         const copyData = await copyResponse.json() as any;
         if (copyData.targeting) {
-          targeting = { ...copyData.targeting, ...targeting }; // Keep our placements but copy the rest
+          targeting = { ...copyData.targeting, ...targeting };
         }
       } else {
-        // Default geo targeting
         targeting.geo_locations = { countries: ["AU"] };
       }
 
-      // Manual overrides (apply to both copied and scratch targeting)
       if (adSet.locations && adSet.locations.length > 0) {
         const customLocations: any[] = [];
         adSet.locations.forEach((loc: string) => {
@@ -356,41 +600,23 @@ app.post("/api/process-asana", async (req, res) => {
       if (adSet.ageMin) targeting.age_min = adSet.ageMin;
       if (adSet.ageMax) targeting.age_max = adSet.ageMax;
 
-      // Clean up targeting to avoid "removed field" errors (e.g. targeting_optimization)
-      // Note: targeting_automation with advantage_audience is REQUIRED by some ad accounts
       delete targeting.targeting_optimization;
       if (!targeting.targeting_automation) {
         targeting.targeting_automation = { advantage_audience: 0 };
       }
 
-      // B: Custom Audience (Optional)
+      // B: Custom Audience
       if (adSet.csvData && adSet.csvName) {
         addStatus(`Creating Custom Audience: ${adSet.csvName}...`);
-        const createAudienceResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/customaudiences`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: adSet.csvName,
-            subtype: "CUSTOM",
-            customer_file_source: "USER_PROVIDED_ONLY",
-            access_token: META_TOKEN
-          })
-        });
-        const audienceResult = await createAudienceResponse.json() as any;
-        if (!audienceResult.error) {
-          const customAudienceId = audienceResult.id;
+        try {
+          const customAudienceId = await metaService.createCustomAudience(adSet.csvName);
           targeting.custom_audiences = [{ id: customAudienceId }];
           
           const emails = adSet.csvData.split("\n").map((line: string) => line.trim()).filter((line: string) => line && line.includes("@"));
           const hashedEmails = emails.map((email: string) => hashData(email));
-          await fetch(`https://graph.facebook.com/v19.0/${customAudienceId}/users`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              payload: { schema: ["EMAIL"], data: hashedEmails },
-              access_token: META_TOKEN
-            })
-          });
+          await metaService.addUsersToAudience(customAudienceId, hashedEmails);
+        } catch (e: any) {
+          addStatus(`Audience creation failed: ${e.message}`);
         }
       }
 
@@ -401,7 +627,7 @@ app.post("/api/process-asana", async (req, res) => {
           operator: "and",
           rules: [
             {
-              event_sources: [{ type: "pixel", id: "627590211536590" }],
+              event_sources: [{ type: "pixel", id: creds.pixelId }],
               retention_seconds: 15552000,
               filter: {
                 operator: "and",
@@ -415,21 +641,15 @@ app.post("/api/process-asana", async (req, res) => {
         }
       };
 
-      const createExclusionResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/customaudiences`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `Palace - ${adSet.name} (Purchase) - 180 days`,
-          subtype: "WEBSITE",
-          pixel_id: "627590211536590",
-          rule: JSON.stringify(exclusionRule),
-          prefill: true,
-          access_token: META_TOKEN
-        })
-      });
-      const exclusionResult = await createExclusionResponse.json() as any;
-      if (!exclusionResult.error) {
-        targeting.excluded_custom_audiences = [{ id: exclusionResult.id }];
+      try {
+        const exclusionId = await metaService.createCustomAudience(
+          `Palace - ${adSet.name} (Purchase) - 180 days`,
+          "WEBSITE",
+          exclusionRule
+        );
+        targeting.excluded_custom_audiences = [{ id: exclusionId }];
+      } catch (e: any) {
+        addStatus(`Exclusion audience failed: ${e.message}`);
       }
 
       // D: Create Ad Set
@@ -437,27 +657,28 @@ app.post("/api/process-asana", async (req, res) => {
         name: adSet.name,
         campaign_id: campaignId,
         billing_event: "IMPRESSIONS",
-        optimization_goal: optimizationGoal,
-        start_time: adjustedStartTime,
-        end_time: adjustedEndTime,
+        optimization_goal: (objective === "Reach") ? "REACH" : (objective === "Traffic" ? "LINK_CLICKS" : "OFFSITE_CONVERSIONS"),
+        start_time: startDate,
+        end_time: endDate,
         targeting: targeting,
-        status: "PAUSED",
-        access_token: META_TOKEN
+        status: "PAUSED"
       };
-      if (attributionSpec) adSetPayload.attribution_spec = attributionSpec;
-      if (promotedObject) adSetPayload.promoted_object = promotedObject;
 
-      const adSetResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/adsets`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(adSetPayload)
-      });
-      const adSetResult = await adSetResponse.json() as any;
-      if (adSetResult.error) {
-        console.error("Meta Ad Set Error Detail:", JSON.stringify(adSetResult.error, null, 2));
-        throw new Error(`Meta Ad Set Error: ${adSetResult.error.message} (Type: ${adSetResult.error.type})`);
+      if (budgetType === 'adset') {
+        adSetPayload.bid_strategy = "LOWEST_COST_WITHOUT_CAP";
+        adSetPayload.lifetime_budget = Math.max(adSet.budget || 100, 100) * 100;
       }
-      const adSetId = adSetResult.id;
+
+      if (objective === "Sales") {
+        adSetPayload.promoted_object = { pixel_id: creds.pixelId, custom_event_type: "PURCHASE" };
+        adSetPayload.attribution_spec = [
+          { event_type: "CLICK_THROUGH", window_days: 7 },
+          { event_type: "VIEW_THROUGH", window_days: 1 },
+          { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 }
+        ];
+      }
+
+      const adSetId = await metaService.createAdSet(adSetPayload);
 
       // Step 3: Create Ads
       for (const ad of adSet.ads) {
@@ -465,81 +686,33 @@ app.post("/api/process-asana", async (req, res) => {
 
         let creativeId = null;
 
-        // Check if manual Ad ID is provided
         if (ad.manualAdId) {
-          addStatus(`Using existing Ad ID: ${ad.manualAdId}...`);
-          const existingAdResponse = await fetch(`https://graph.facebook.com/v19.0/${ad.manualAdId}?fields=creative&access_token=${META_TOKEN}`);
-          const existingAdData = await existingAdResponse.json() as any;
-          if (existingAdData.creative && existingAdData.creative.id) {
-            creativeId = existingAdData.creative.id;
-            addStatus(`Found Creative ID: ${creativeId} from existing ad.`);
-          } else {
-            addStatus(`Warning: Could not find creative for Ad ID ${ad.manualAdId}. Falling back to creation.`);
-          }
+          creativeId = await metaService.getExistingCreative(ad.manualAdId);
         }
 
-        const ctaType = ad.ctaType || ((objective?.toLowerCase() === "sales" || objective?.toLowerCase() === "outcome_sales") ? "BOOK_NOW" : "LEARN_MORE");
+        const ctaType = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
 
         if (!creativeId && ad.type === 'video') {
           const feedUrl = getDownloadUrl(ad.feedVideoUrl);
           const verticalUrl = ad.verticalVideoUrl ? getDownloadUrl(ad.verticalVideoUrl) : null;
           const thumbnailUrl = ad.thumbnail ? getDownloadUrl(ad.thumbnail) : "https://picsum.photos/1200/628";
 
-          addStatus(`Uploading Feed Video for ${ad.adName}...`);
-          if (feedUrl?.includes("drive.google.com")) {
-            addStatus("Note: Google Drive links must be 'Public' (Anyone with the link) for Meta to fetch them.");
-          }
-          
-          const feedVideoUpload = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/advideos`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ file_url: feedUrl, access_token: META_TOKEN })
-          });
-          const feedVideoResult = await feedVideoUpload.json() as any;
-          if (feedVideoResult.error) {
-            addStatus(`Feed Video Upload Error: ${feedVideoResult.error.message}`);
-            addStatus(`URL attempted: ${feedUrl}`);
-            continue;
-          }
-          const feedVideoId = feedVideoResult.id;
-
+          const feedVideoId = await metaService.uploadVideo(feedUrl);
           let verticalVideoId = null;
           if (verticalUrl) {
-            addStatus(`Uploading Vertical Video for ${ad.adName}...`);
-            const verticalVideoUpload = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/advideos`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ file_url: verticalUrl, access_token: META_TOKEN })
-            });
-            const verticalVideoResult = await verticalVideoUpload.json() as any;
-            if (verticalVideoResult.error) {
-              addStatus(`Vertical Video Upload Error: ${verticalVideoResult.error.message}`);
-              addStatus(`URL attempted: ${verticalUrl}`);
-            } else {
-              verticalVideoId = verticalVideoResult.id;
-            }
+            try {
+              verticalVideoId = await metaService.uploadVideo(verticalUrl);
+            } catch (e) {}
           }
 
-          addStatus("Waiting for video processing to complete...");
-          const feedReady = await waitForVideoProcessing(feedVideoId, META_TOKEN, addStatus);
-          if (!feedReady) {
-            addStatus(`Skipping creative creation for ${ad.adName} because feed video is not ready.`);
-            continue;
-          }
-
-          if (verticalVideoId) {
-            const verticalReady = await waitForVideoProcessing(verticalVideoId, META_TOKEN, addStatus);
-            if (!verticalReady) {
-              addStatus(`Warning: Vertical video for ${ad.adName} failed processing. Falling back to feed video only.`);
-              verticalVideoId = null;
-            }
-          }
+          await waitForVideoProcessing(feedVideoId, creds.token, addStatus);
+          if (verticalVideoId) await waitForVideoProcessing(verticalVideoId, creds.token, addStatus);
 
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
             object_story_spec: {
-              page_id: PAGE_ID,
-              instagram_user_id: INSTAGRAM_ID,
+              page_id: brand.meta_page_id,
+              instagram_user_id: brand.instagram_page_id,
               video_data: {
                 video_id: feedVideoId,
                 image_url: thumbnailUrl,
@@ -547,56 +720,27 @@ app.post("/api/process-asana", async (req, res) => {
                 message: ad.copy,
                 call_to_action: { type: ctaType, value: { link: ad.url } }
               }
-            },
-            access_token: META_TOKEN
+            }
           };
 
           if (verticalVideoId) {
-            creativePayload.asset_customization_rules = [
-              {
-                customization_spec: { 
-                  placements: [
-                    "facebook_story", 
-                    "instagram_story", 
-                    "instagram_reels", 
-                    "facebook_reels",
-                    "profile_reels",
-                    "instream_video_reels"
-                  ] 
-                },
-                video_id: verticalVideoId
-              }
-            ];
+            creativePayload.asset_customization_rules = [{
+              customization_spec: { placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels", "profile_reels", "instream_video_reels"] },
+              video_id: verticalVideoId
+            }];
           }
 
-          const creativeResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/adcreatives`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(creativePayload)
-          });
-          const creativeResult = await creativeResponse.json() as any;
-          if (creativeResult.error) {
-            addStatus(`Creative Creation Error: ${creativeResult.error.message}`);
-            if (creativeResult.error.error_user_msg) addStatus(`Detail: ${creativeResult.error.error_user_msg}`);
-            console.error("Full Creative Error:", JSON.stringify(creativeResult.error, null, 2));
-            continue;
-          }
-          creativeId = creativeResult.id;
+          creativeId = await metaService.createCreative(creativePayload);
         } else if (!creativeId && ad.type === 'carousel') {
-          addStatus(`Creating Carousel Ad Creative for ${ad.adName}...`);
-          
-          const thumbnailUrl = ad.thumbnail ? getDownloadUrl(ad.thumbnail) : "https://picsum.photos/1080/1080";
-          
-          // Use carouselCards if provided, otherwise fallback to thumbnail
           const cards = (ad.carouselCards && ad.carouselCards.length > 0) 
             ? ad.carouselCards.map((c: any) => ({ ...c, imageUrl: getDownloadUrl(c.imageUrl) }))
-            : [{ imageUrl: thumbnailUrl, headline: ad.headline, url: ad.url }];
+            : [{ imageUrl: ad.thumbnail || "https://picsum.photos/1080/1080", headline: ad.headline, url: ad.url }];
           
-          const creativePayload: any = {
+          const creativePayload = {
             name: `Creative: ${ad.adName || ad.headline}`,
             object_story_spec: {
-              page_id: PAGE_ID,
-              instagram_user_id: INSTAGRAM_ID,
+              page_id: brand.meta_page_id,
+              instagram_user_id: brand.instagram_page_id,
               link_data: {
                 link: ad.url,
                 message: ad.copy,
@@ -609,76 +753,37 @@ app.post("/api/process-asana", async (req, res) => {
                   call_to_action: { type: ctaType, value: { link: card.url || ad.url } }
                 }))
               }
-            },
-            access_token: META_TOKEN
+            }
           };
-          const creativeResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/adcreatives`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(creativePayload)
-          });
-          const creativeResult = await creativeResponse.json() as any;
-          if (creativeResult.error) {
-            addStatus(`Creative Creation Error: ${creativeResult.error.message}`);
-            continue;
-          }
-          creativeId = creativeResult.id;
+          creativeId = await metaService.createCreative(creativePayload);
         } else if (!creativeId && ad.type === 'image') {
-          addStatus(`Creating Image Ad Creative for ${ad.adName}...`);
-          const thumbnailUrl = ad.thumbnail ? getDownloadUrl(ad.thumbnail) : "https://picsum.photos/1200/628";
-          
-          const creativePayload: any = {
+          const creativePayload = {
             name: `Creative: ${ad.adName || ad.headline}`,
             object_story_spec: {
-              page_id: PAGE_ID,
-              instagram_user_id: INSTAGRAM_ID,
+              page_id: brand.meta_page_id,
+              instagram_user_id: brand.instagram_page_id,
               link_data: {
-                image_url: thumbnailUrl,
+                image_url: ad.thumbnail || "https://picsum.photos/1200/628",
                 link: ad.url,
                 message: ad.copy,
                 name: ad.headline,
                 call_to_action: { type: ctaType, value: { link: ad.url } }
               }
-            },
-            access_token: META_TOKEN
+            }
           };
-          const creativeResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/adcreatives`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(creativePayload)
-          });
-          const creativeResult = await creativeResponse.json() as any;
-          if (creativeResult.error) {
-            addStatus(`Creative Creation Error: ${creativeResult.error.message}`);
-            continue;
-          }
-          creativeId = creativeResult.id;
+          creativeId = await metaService.createCreative(creativePayload);
         }
 
         if (creativeId) {
-          addStatus(`Publishing Ad: ${ad.adName}...`);
-          const adPayload: any = {
+          await metaService.createAd({
             name: ad.adName || `Ad: ${ad.headline}`,
             adset_id: adSetId,
             creative: { creative_id: creativeId },
             status: "PAUSED",
-            ad_format: "DESKTOP_FEED_STANDARD", // Try to force standard format to avoid enhancements
+            ad_format: "DESKTOP_FEED_STANDARD",
             multi_advertiser_ads_enabled: false,
-            url_tags: ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`,
-            access_token: META_TOKEN
-          };
-
-          const adResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/ads`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(adPayload)
+            url_tags: ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`
           });
-          const adResult = await adResponse.json() as any;
-          if (adResult.error) {
-            addStatus(`Ad Publishing Error: ${adResult.error.message}`);
-          } else {
-            addStatus(`Ad Published Successfully! ID: ${adResult.id}`);
-          }
         }
       }
     }

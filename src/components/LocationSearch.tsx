@@ -5,37 +5,53 @@ import { X } from 'lucide-react';
 interface LocationSearchProps {
   onLocationsChange: (locations: string[]) => void;
   initialLocations?: string[];
+  brandId?: string;
 }
 
-export default function LocationSearch({ onLocationsChange, initialLocations = [] }: LocationSearchProps) {
+export default function LocationSearch({ onLocationsChange, initialLocations = [], brandId }: LocationSearchProps) {
   const [locations, setLocations] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<string[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>(initialLocations);
+  const [isLoading, setIsLoading] = useState(false);
   
   const fuseRef = useRef<Fuse<string> | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setSelectedLocations(initialLocations);
+  }, [initialLocations]);
+
+  useEffect(() => {
     const fetchLocations = async () => {
+      if (!brandId) {
+        setLocations([]);
+        return;
+      }
+      
+      setIsLoading(true);
       try {
-        const response = await fetch('/api/locations');
+        const url = `/api/locations?brandId=${brandId}`;
+        const response = await fetch(url);
         const data = await response.json();
         setLocations(data);
         
         fuseRef.current = new Fuse(data, {
           includeScore: true,
-          threshold: 0.3,
-          ignoreLocation: true,
+          threshold: 0.4, // Slightly more lenient
+          distance: 100,
+          minMatchCharLength: 1
         });
       } catch (error) {
         console.error("Failed to fetch locations:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
     
     fetchLocations();
-  }, []);
+  }, [brandId]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -81,11 +97,45 @@ export default function LocationSearch({ onLocationsChange, initialLocations = [
     onLocationsChange(updatedLocations);
   };
 
+  const handleAddAll = () => {
+    setSelectedLocations(locations);
+    onLocationsChange(locations);
+  };
+
+  const handleClearAll = () => {
+    setSelectedLocations([]);
+    onLocationsChange([]);
+  };
+
   return (
     <div ref={wrapperRef} className="relative w-full font-sans">
-      <label className="block text-xs font-semibold text-[#141414]/50 uppercase tracking-wider mb-2">
-        Target Locations
-      </label>
+      <div className="flex items-center justify-between mb-2">
+        <label className="block text-xs font-semibold text-[#141414]/50 uppercase tracking-wider">
+          Target Locations
+        </label>
+        {brandId && brandId !== '' && (
+          <div className="flex gap-3">
+            {locations.length > 0 && (
+              <button
+                type="button"
+                onClick={handleAddAll}
+                className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40] hover:underline transition-all"
+              >
+                Add All Brand Locations ({locations.length})
+              </button>
+            )}
+            {selectedLocations.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:underline transition-all"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {selectedLocations.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
@@ -111,9 +161,10 @@ export default function LocationSearch({ onLocationsChange, initialLocations = [
         type="text"
         value={query}
         onChange={handleSearch}
-        onFocus={() => { if (query) setIsOpen(true); }}
-        placeholder="Search for locations (e.g. rai, como, astor...)"
-        className="w-full bg-white border border-[#141414]/10 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#5A5A40]/20 focus:border-[#5A5A40] transition-all"
+        onFocus={() => { if (query || results.length > 0) setIsOpen(true); }}
+        placeholder={isLoading ? "Loading locations..." : "Search for locations (e.g. Balwyn, Astor, Como...)"}
+        disabled={isLoading}
+        className="w-full bg-white border border-[#141414]/10 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#5A5A40]/20 focus:border-[#5A5A40] transition-all disabled:opacity-50"
       />
 
       {isOpen && results.length > 0 && (

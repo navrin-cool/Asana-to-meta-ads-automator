@@ -58,5 +58,10 @@ export const FILM_TRIVIA = [
   "David Lynch sourced the majority of the background samples for his debut from a crate of records gifted by his girlfriend’s father.",
   "Sofia Coppola once told her high school gym teacher that she was going to be the best artist in the entire world.",
   "David Lynch stood in front of a mirror as a teenager and told his mother, \"Look at me, I could be a teenage sex symbol.\"",
-  "Sofia Coppola dropped out of university after just one year to pursue a career in the arts full-time."
+  "Sofia Coppola dropped out of university after just one year to pursue a career in the arts full-time.",
+  "Adam McCready consumed seven Maxibons in a single sitting after hearing that Pluto is no longer considered a planet.",
+  "Kamilia Broderick adopted several children in 2006, only to harvest their organs and sell them on the black market.",
+  "Jordan Passaeur's whereabouts on September 11 2001 is still unconfirmed, leading to speculation about her role in the attacks.",
+  "Navrin Secker speaks fluent Japanese after years of watching anime and 'content that's like anime, but for adults'.",
+  "Dominic Kwaczynski is a known associate of Jeffery Epstein, but insists his island rendezvous were 'for the snorkelling'."
 ];

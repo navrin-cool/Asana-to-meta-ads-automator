@@ -42,6 +42,9 @@ interface AdSet {
   locations: string[];
   ageMin?: number;
   ageMax?: number;
+  customAudiences?: string[];
+  excludedCustomAudiences?: string[];
+  geoLocations?: any;
   budget?: number;
   csvData?: string;
   csvName?: string;
@@ -51,6 +54,7 @@ interface AdSet {
 interface CampaignBrief {
   clientId: string;
   movieName: string;
+  genre: string;
   campaignName: string;
   objective: string;
   startDate: string;
@@ -86,6 +90,7 @@ export default function App() {
     return {
       clientId: '',
       movieName: '',
+      genre: '',
       campaignName: 'New Campaign',
       objective: 'Sales',
       startDate: today,
@@ -117,6 +122,7 @@ export default function App() {
   };
 
   const [asanaUrl, setAsanaUrl] = useState('');
+  const [importCampaignId, setImportCampaignId] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [brief, setBrief] = useState<CampaignBrief>(createDefaultBrief());
@@ -215,7 +221,8 @@ export default function App() {
       const initialBrief: CampaignBrief = {
         clientId: brief.clientId,
         movieName: data.movieName || data.movieTitle,
-        campaignName: `Campaign: ${data.movieName || data.movieTitle}`,
+        genre: data.genre || '',
+        campaignName: data.campaignName || `Campaign: ${data.movieName || data.movieTitle}`,
         objective: data.objective,
         startDate: data.startDate?.split('T')[0] || '',
         endDate: data.endDate?.split('T')[0] || '',
@@ -255,8 +262,57 @@ export default function App() {
     }
   };
 
+  const handleFetchCampaignData = async () => {
+    if (!importCampaignId) {
+      setError('Please paste a Meta Campaign ID first.');
+      return;
+    }
+
+    if (!brief.clientId) {
+      setError('Please select a Client before fetching campaign data.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('/api/fetch-campaign-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: importCampaignId, clientId: brief.clientId })
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      setBrief({
+        ...data,
+        clientId: brief.clientId
+      });
+      
+      if (!data.adSets.every((as: any) => as.platformAccountId)) {
+        setSuccess('Campaign data imported, but some brands could not be matched automatically. Please select them manually.');
+      } else {
+        setSuccess('Campaign data imported successfully!');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleLaunch = async () => {
     if (!brief) return;
+
+    // Validation: Ensure all ad sets have a brand selected
+    const missingBrand = brief.adSets.find(as => !as.platformAccountId);
+    if (missingBrand) {
+      setError(`Please select a Brand/Account for Ad Set: "${missingBrand.name}"`);
+      return;
+    }
 
     setIsLoading(true);
     setIsLaunching(true);
@@ -273,8 +329,11 @@ export default function App() {
 
       const data = await response.json();
       if (data.logs) setLogs(data.logs);
-      if (!response.ok) throw new Error(data.error || 'Failed to launch campaign');
-      setSuccess(`Campaign launched successfully! Ad ID: ${data.adId}`);
+      if (!response.ok) {
+        const errorMsg = data.error || 'Failed to launch campaign';
+        throw new Error(errorMsg);
+      }
+      setSuccess(`Campaign launched successfully!`);
       setIsLaunching(false);
     } catch (err: any) {
       setError(err.message);
@@ -282,6 +341,13 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const copyLogsToClipboard = () => {
+    const logText = logs.join('\n');
+    navigator.clipboard.writeText(logText);
+    setSuccess('Logs copied to clipboard!');
+    setTimeout(() => setSuccess(null), 3000);
   };
 
   const addAdSet = () => {
@@ -363,50 +429,158 @@ export default function App() {
     });
   };
 
+  useEffect(() => {
+    if (!brief.movieName && !brief.clientId) return;
+
+    const selectedClient = clients.find(c => c.id.toString() === brief.clientId);
+    const clientName = selectedClient?.name || 'CLIENT';
+    const movieName = brief.movieName || 'MOVIE NAME';
+    const genre = brief.genre || 'GENRE';
+    
+    const objectiveMap: Record<string, string> = {
+      "Sales": "CV",
+      "Traffic": "TR",
+      "Reach": "Reach",
+      "Engagement": "EG",
+      "Video Views": "VV"
+    };
+    const displayObjective = objectiveMap[brief.objective] || brief.objective || 'OBJECTIVE';
+    
+    let newName = `${clientName} - ${movieName} - ${genre} - ${displayObjective}`;
+
+    if (clientName.includes('Moving Story')) {
+      newName = `15569 - ${movieName} | PRE (AU) - FB & IG - ${displayObjective} - Moving Story - ${genre} - Theatrical`;
+    } else if (clientName.includes('Palace Cinemas')) {
+      newName = `12396 - ${movieName} - FB & IG - ${displayObjective} - Palace Cinemas - ${genre} - Theatrical`;
+    } else if (clientName.includes('Reading Cinemas')) {
+      newName = `GRUVI - ${movieName} (AU) - FB & IG - ${displayObjective} - Reading Cinemas - ${genre} - Theatrical`;
+    } else {
+      const startDate = brief.startDate || 'START DATE';
+      const endDate = brief.endDate || 'END DATE';
+      newName = `${clientName} - ${movieName} - ${genre} - ${displayObjective} - ${startDate} - ${endDate}`;
+    }
+    
+    // Only update if it's different to avoid infinite loops
+    if (brief.campaignName !== newName && (brief.campaignName === 'New Campaign' || brief.campaignName === '' || brief.campaignName.includes(' - '))) {
+      setBrief(prev => ({ ...prev, campaignName: newName }));
+    }
+  }, [brief.movieName, brief.clientId, brief.genre, brief.objective, brief.startDate, brief.endDate, clients]);
+
   return (
     <div className="min-h-screen bg-[#F5F5F0] text-[#141414] font-sans selection:bg-[#5A5A40] selection:text-white pb-24">
       <div className="max-w-6xl mx-auto px-6 py-16">
         {/* Header */}
-        <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-[#5A5A40] rounded-full flex items-center justify-center text-white">
-                <Rocket size={20} />
+        <header className="mb-16 text-center">
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="inline-flex items-center justify-center w-16 h-16 bg-[#5A5A40] rounded-[20px] shadow-xl shadow-[#5A5A40]/20 text-white mb-6"
+          >
+            <Rocket size={32} />
+          </motion.div>
+          <motion.h1 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-4xl font-bold tracking-tight mb-3"
+          >
+            Asana to Meta Ads v3
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-[#5A5A40] text-xl italic serif max-w-2xl mx-auto mb-12"
+          >
+            Automate your Meta campaign creation with full control.
+          </motion.p>
+
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3 }}
+            className="bg-white rounded-[32px] p-8 shadow-xl shadow-black/5 border border-black/5 flex flex-wrap items-end justify-center gap-6"
+          >
+            <div className="flex flex-col gap-2 text-left">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Client</label>
+              <select
+                className="bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 shadow-inner text-sm w-56 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all appearance-none font-medium"
+                value={brief.clientId}
+                onChange={(e) => {
+                  const clientId = e.target.value;
+                  setBrief({ 
+                    ...brief, 
+                    clientId,
+                    adSets: brief.adSets.map(as => ({ ...as, platformAccountId: '' }))
+                  });
+                }}
+              >
+                <option value="">Select Client...</option>
+                {clients.map(client => (
+                  <option key={client.id} value={client.id}>{client.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2 text-left">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Asana Task URL</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#5A5A40]/40">
+                  <LinkIcon size={14} />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Paste Asana URL..."
+                  className="bg-[#F5F5F0] border-none rounded-2xl py-4 pl-11 pr-6 shadow-inner text-sm w-64 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all"
+                  value={asanaUrl}
+                  onChange={(e) => setAsanaUrl(e.target.value)}
+                />
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight">Asana to Meta Ads v3</h1>
             </div>
-            <p className="text-[#5A5A40] text-lg italic serif">
-              Automate your Meta campaign creation with full control.
-            </p>
-          </div>
-          
-          <div className="flex gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40">Asana Task URL</label>
-              <input
-                type="text"
-                placeholder="Paste Asana URL..."
-                className="bg-white border-none rounded-xl py-3 px-4 shadow-sm text-sm w-64 focus:ring-2 focus:ring-[#5A5A40] outline-none"
-                value={asanaUrl}
-                onChange={(e) => setAsanaUrl(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40">Audience CSV (Optional)</label>
+
+            <div className="flex flex-col gap-2 text-left">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Audience CSV (Optional)</label>
               <input type="file" id="csv-file-top" className="hidden" onChange={handleFileChange} />
-              <label htmlFor="csv-file-top" className="bg-white border-none rounded-xl py-3 px-4 shadow-sm text-sm w-48 cursor-pointer hover:bg-gray-50 flex items-center gap-2">
-                <FileText size={14} />
-                <span className="truncate">{csvFile ? csvFile.name : 'Choose CSV...'}</span>
+              <label htmlFor="csv-file-top" className="bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 shadow-inner text-sm w-48 cursor-pointer hover:bg-[#EBEBE6] flex items-center gap-3 transition-all">
+                <FileText size={16} className="text-[#5A5A40]/60" />
+                <span className="truncate font-medium">{csvFile ? csvFile.name : 'Choose CSV...'}</span>
               </label>
             </div>
+
             <button
               onClick={handleFetchBrief}
               disabled={isLoading}
-              className="bg-[#5A5A40] text-white px-6 py-3 rounded-xl font-semibold self-end hover:bg-[#4A4A30] transition-all disabled:opacity-50"
+              className="bg-[#5A5A40] text-white px-8 py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-[#5A5A40]/20 hover:bg-[#4A4A30] hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 h-[52px]"
             >
               {isLoading ? <Loader2 size={18} className="animate-spin" /> : 'Fetch from Asana'}
             </button>
-          </div>
+
+            <div className="w-px h-12 bg-black/5 mx-1 hidden md:block" />
+
+            <div className="flex flex-col gap-2 text-left">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Import Meta Campaign</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#5A5A40]/40">
+                  <Sparkles size={14} />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Paste Campaign ID..."
+                  className="bg-[#F5F5F0] border-none rounded-2xl py-4 pl-11 pr-6 shadow-inner text-sm w-48 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all"
+                  value={importCampaignId}
+                  onChange={(e) => setImportCampaignId(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleFetchCampaignData}
+              disabled={isLoading}
+              className="bg-[#141414] text-white px-8 py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-black/10 hover:bg-black hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 h-[52px]"
+            >
+              {isLoading ? <Loader2 size={18} className="animate-spin" /> : 'Import Campaign'}
+            </button>
+          </motion.div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -425,27 +599,7 @@ export default function App() {
                       <h2 className="text-xl font-semibold tracking-tight">Campaign Settings</h2>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                      <div className="col-span-1">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Client</label>
-                        <select
-                          className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
-                          value={brief.clientId}
-                          onChange={(e) => {
-                            const clientId = e.target.value;
-                            setBrief({ 
-                              ...brief, 
-                              clientId,
-                              adSets: brief.adSets.map(as => ({ ...as, platformAccountId: '' }))
-                            });
-                          }}
-                        >
-                          <option value="">Select Client...</option>
-                          {clients.map(client => (
-                            <option key={client.id} value={client.id}>{client.name}</option>
-                          ))}
-                        </select>
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="col-span-1">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Movie Name</label>
                         <input
@@ -453,6 +607,16 @@ export default function App() {
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-lg font-medium"
                           value={brief.movieName}
                           onChange={(e) => setBrief({ ...brief, movieName: e.target.value })}
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Genre</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Action, Drama..."
+                          className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-lg font-medium"
+                          value={brief.genre}
+                          onChange={(e) => setBrief({ ...brief, genre: e.target.value })}
                         />
                       </div>
                       <div className="col-span-1">
@@ -545,7 +709,7 @@ export default function App() {
                             <div className="w-8 h-8 bg-[#F5F5F0] rounded-full flex items-center justify-center text-[#5A5A40] font-bold text-xs">
                               {asIndex + 1}
                             </div>
-                            <h2 className="text-xl font-semibold tracking-tight">Ad Set Segment</h2>
+                            <h2 className="text-xl font-semibold tracking-tight">{adSet.name || 'Ad Set Segment'}</h2>
                             <button 
                               onClick={() => toggleMinimizeAdSet(adSet.id)}
                               className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest bg-[#F5F5F0] px-3 py-1.5 rounded-lg hover:bg-gray-200 transition-colors ml-4"
@@ -626,8 +790,33 @@ export default function App() {
                             <LocationSearch 
                               brandId={adSet.platformAccountId}
                               initialLocations={adSet.locations}
-                              onLocationsChange={(locations) => updateAdSet(adSet.id, { locations })}
+                              geoLocations={adSet.geoLocations}
+                              onLocationsChange={(locations) => updateAdSet(adSet.id, { locations, geoLocations: undefined })}
+                              onGeoLocationsChange={(geoLocations) => updateAdSet(adSet.id, { geoLocations })}
                             />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Custom Audiences (IDs)</label>
+                              <input
+                                type="text"
+                                placeholder="ID1, ID2..."
+                                className="w-full bg-[#F5F5F0] border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
+                                value={adSet.customAudiences?.join(', ') || ''}
+                                onChange={(e) => updateAdSet(adSet.id, { customAudiences: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Excluded Audiences (IDs)</label>
+                              <input
+                                type="text"
+                                placeholder="ID1, ID2..."
+                                className="w-full bg-[#F5F5F0] border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
+                                value={adSet.excludedCustomAudiences?.join(', ') || ''}
+                                onChange={(e) => updateAdSet(adSet.id, { excludedCustomAudiences: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                              />
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-4">
@@ -966,9 +1155,9 @@ export default function App() {
         </footer>
       </div>
 
-      {/* Progress Modal */}
+      {/* Progress & Status Modal */}
       <AnimatePresence>
-        {isLaunching && (
+        {(isLaunching || logs.length > 0) && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -979,59 +1168,113 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white rounded-[48px] p-12 shadow-2xl border border-black/5 max-w-2xl w-full text-center relative overflow-hidden"
+              className="bg-white rounded-[48px] shadow-2xl border border-black/5 max-w-2xl w-full flex flex-col max-h-[90vh] relative overflow-hidden"
             >
               <div className="absolute top-0 left-0 w-full h-2 bg-[#F5F5F0]">
-                <motion.div 
-                  initial={{ width: "0%" }}
-                  animate={{ width: "100%" }}
-                  transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-                  className="h-full bg-[#5A5A40]"
-                />
+                {isLaunching && (
+                  <motion.div 
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                    className="h-full bg-[#5A5A40]"
+                  />
+                )}
               </div>
 
-              <div className="mb-12 flex flex-col items-center">
-                <div className="w-20 h-20 bg-[#F5F5F0] rounded-full flex items-center justify-center text-[#5A5A40] mb-6 relative">
-                  <Loader2 size={40} className="animate-spin" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Rocket size={20} className="opacity-20" />
+              <div className="p-10 border-b border-black/5 flex items-center justify-between">
+                <div className="flex items-center gap-5">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${error ? 'bg-red-50 text-red-500' : 'bg-[#5A5A40] text-white'}`}>
+                    {isLaunching ? <Loader2 size={28} className="animate-spin" /> : (error ? <AlertCircle size={28} /> : <CheckCircle2 size={28} />)}
+                  </div>
+                  <div className="text-left">
+                    <h2 className="text-2xl font-bold tracking-tight">
+                      {isLaunching ? 'Launching Campaign' : (error ? 'Launch Failed' : 'Launch Complete')}
+                    </h2>
+                    <p className="text-sm text-[#5A5A40]/60 font-medium">
+                      {isLaunching ? 'Communicating with Meta Ads API...' : (error ? 'Check the diagnostics below' : 'Campaign is now live (paused)')}
+                    </p>
                   </div>
                 </div>
-                <h2 className="text-3xl font-semibold tracking-tight mb-2">Launching Campaign</h2>
-                <p className="text-[#5A5A40]/60 italic serif">Please wait while we communicate with Meta Ads API...</p>
-              </div>
-
-              <div className="bg-[#F5F5F0] rounded-3xl p-8 relative min-h-[160px] flex flex-col justify-center">
-                <div className="absolute -top-3 left-8 bg-[#5A5A40] text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full flex items-center gap-1">
-                  <Sparkles size={10} /> Film Facts
-                </div>
-                <AnimatePresence mode="wait">
-                  <motion.p 
-                    key={triviaIndex}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="text-xl font-medium text-[#141414] leading-relaxed italic serif"
+                {logs.length > 0 && (
+                  <button 
+                    onClick={copyLogsToClipboard}
+                    className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest bg-[#F5F5F0] border border-black/5 px-4 py-2.5 rounded-xl hover:bg-white hover:shadow-sm transition-all"
                   >
-                    "{shuffledTrivia[triviaIndex] || FILM_TRIVIA[0]}"
-                  </motion.p>
-                </AnimatePresence>
+                    <Copy size={12} /> Copy Logs
+                  </button>
+                )}
               </div>
 
-              <div className="mt-12 flex flex-col items-center gap-4">
-                <div className="flex gap-1">
-                  {FILM_TRIVIA.slice(0, 5).map((_, i) => (
-                    <div 
-                      key={i} 
-                      className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${
-                        (triviaIndex % 5) === i ? 'bg-[#5A5A40] w-4' : 'bg-[#5A5A40]/20'
-                      }`} 
-                    />
+              <div className="flex-1 overflow-y-auto p-10 space-y-4 bg-[#F5F5F0]/30 text-left">
+                {isLaunching && (
+                  <div className="bg-white rounded-3xl p-8 mb-8 shadow-sm border border-black/5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Sparkles size={14} className="text-[#5A5A40]" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]">Film Trivia</span>
+                    </div>
+                    <AnimatePresence mode="wait">
+                      <motion.p 
+                        key={triviaIndex}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="text-lg font-medium text-[#141414] italic serif"
+                      >
+                        "{shuffledTrivia[triviaIndex] || FILM_TRIVIA[0]}"
+                      </motion.p>
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-4">Execution Logs</h3>
+                  {logs.map((log, i) => (
+                    <motion.div 
+                      key={i}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className="flex gap-4 text-sm"
+                    >
+                      <span className="text-[#5A5A40]/30 font-mono text-[10px] mt-1 w-4">{i + 1}</span>
+                      <span className={`font-medium leading-relaxed ${log.toLowerCase().includes('error') || log.toLowerCase().includes('failed') ? 'text-red-500' : 'text-[#5A5A40]'}`}>
+                        {log}
+                      </span>
+                    </motion.div>
                   ))}
+                  {error && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-8 p-8 bg-red-50 rounded-[32px] border border-red-100"
+                    >
+                      <div className="flex items-start gap-4 text-red-600">
+                        <AlertCircle size={20} className="mt-1 flex-shrink-0" />
+                        <div>
+                          <p className="font-bold text-xs uppercase tracking-widest mb-2">Diagnostic Error Information</p>
+                          <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{error}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                  <div ref={logEndRef} />
                 </div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40">
-                  Processing Assets & Audiences
-                </p>
+              </div>
+
+              <div className="p-8 border-t border-black/5 bg-white flex justify-end">
+                <button 
+                  onClick={() => {
+                    if (!isLaunching) {
+                      setLogs([]);
+                      setError(null);
+                      setSuccess(null);
+                    }
+                  }}
+                  disabled={isLaunching}
+                  className="bg-[#141414] text-white px-12 py-5 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-black/10 hover:bg-black transition-all disabled:opacity-50"
+                >
+                  {isLaunching ? 'Processing...' : 'Close Diagnostics'}
+                </button>
               </div>
             </motion.div>
           </motion.div>

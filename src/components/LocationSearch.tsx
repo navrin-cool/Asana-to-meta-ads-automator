@@ -4,11 +4,19 @@ import { X } from 'lucide-react';
 
 interface LocationSearchProps {
   onLocationsChange: (locations: string[]) => void;
+  onGeoLocationsChange?: (geoLocations: any) => void;
   initialLocations?: string[];
+  geoLocations?: any;
   brandId?: string;
 }
 
-export default function LocationSearch({ onLocationsChange, initialLocations = [], brandId }: LocationSearchProps) {
+export default function LocationSearch({ 
+  onLocationsChange, 
+  onGeoLocationsChange,
+  initialLocations = [], 
+  geoLocations,
+  brandId 
+}: LocationSearchProps) {
   const [locations, setLocations] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<string[]>([]);
@@ -105,37 +113,51 @@ export default function LocationSearch({ onLocationsChange, initialLocations = [
   const handleClearAll = () => {
     setSelectedLocations([]);
     onLocationsChange([]);
+    if (onGeoLocationsChange) onGeoLocationsChange(undefined);
   };
+
+  const hasCustomTargeting = geoLocations && (geoLocations.custom_locations?.length > 0 || geoLocations.countries?.length > 0);
 
   return (
     <div ref={wrapperRef} className="relative w-full font-sans">
       <div className="flex items-center justify-between mb-2">
-        <label className="block text-xs font-semibold text-[#141414]/50 uppercase tracking-wider">
-          Target Locations
-        </label>
-        {brandId && brandId !== '' && (
-          <div className="flex gap-3">
-            {locations.length > 0 && (
-              <button
-                type="button"
-                onClick={handleAddAll}
-                className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40] hover:underline transition-all"
-              >
-                Add All Brand Locations ({locations.length})
-              </button>
-            )}
-            {selectedLocations.length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:underline transition-all"
-              >
-                Clear All
-              </button>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <label className="block text-xs font-semibold text-[#141414]/50 uppercase tracking-wider">
+            Target Locations
+          </label>
+          {hasCustomTargeting && (
+            <span className="bg-emerald-100 text-emerald-700 text-[8px] font-bold uppercase px-2 py-0.5 rounded-full border border-emerald-200">
+              Imported Targeting Active
+            </span>
+          )}
+        </div>
+        <div className="flex gap-3">
+          {brandId && brandId !== '' && locations.length > 0 && (
+            <button
+              type="button"
+              onClick={handleAddAll}
+              className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40] hover:underline transition-all"
+            >
+              Add All Brand Locations ({locations.length})
+            </button>
+          )}
+          {(selectedLocations.length > 0 || hasCustomTargeting) && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:underline transition-all"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
+
+      {hasCustomTargeting && (
+        <div className="mb-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[10px] text-emerald-800 font-medium">
+          Targeting imported from Meta campaign is active. Adding new locations below will replace it.
+        </div>
+      )}
 
       {selectedLocations.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">

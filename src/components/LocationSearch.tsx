@@ -181,7 +181,7 @@ export default function LocationSearch({
 
       <input
         type="text"
-        value={query}
+        value={query || ''}
         onChange={handleSearch}
         onFocus={() => { if (query || results.length > 0) setIsOpen(true); }}
         placeholder={isLoading ? "Loading locations..." : "Search for locations (e.g. Balwyn, Astor, Como...)"}

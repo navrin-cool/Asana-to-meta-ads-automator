@@ -28,6 +28,9 @@ interface Ad {
   thumbnail: string;
   ctaType?: string;
   manualAdId?: string;
+  manualFeedVideoId?: string;
+  manualVerticalVideoId?: string;
+  manualThumbnailHash?: string;
   customUrlParams?: string;
   feedVideoUrl?: string;
   verticalVideoUrl?: string;
@@ -62,6 +65,7 @@ interface CampaignBrief {
   budget: number;
   budgetType: 'campaign' | 'adset';
   adSets: AdSet[];
+  createAudience: boolean;
 }
 
 interface Brand {
@@ -80,6 +84,192 @@ interface Client {
   brands: Brand[];
 }
 
+const VideoUploader = ({ 
+  label, 
+  onUpload, 
+  clientId, 
+  existingId 
+}: { 
+  label: string, 
+  onUpload: (id: string) => void, 
+  clientId: string,
+  existingId?: string
+}) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith('video/')) {
+      setError('Please upload a video file.');
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('clientId', clientId);
+
+    try {
+      const response = await fetch('/api/upload-video', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const contentType = response.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 100)}...`);
+      }
+
+      if (!response.ok) throw new Error(data.error || 'Upload failed');
+      
+      onUpload(data.videoId);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">{label}</label>
+      <div 
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleFile(e.dataTransfer.files[0]);
+          }
+        }}
+        className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all min-h-[100px] ${
+          existingId ? 'border-green-500/30 bg-green-50/30' : 'border-[#5A5A40]/20 hover:border-[#5A5A40]/40 bg-white'
+        }`}
+      >
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          accept="video/*"
+          onChange={(e) => e.target.files && handleFile(e.target.files[0])}
+        />
+        {isUploading ? (
+          <Loader2 size={20} className="animate-spin text-[#5A5A40]" />
+        ) : existingId ? (
+          <CheckCircle2 size={20} className="text-green-500" />
+        ) : (
+          <Video size={20} className="text-[#5A5A40]/40" />
+        )}
+        <span className="text-[10px] font-medium text-[#5A5A40]/60 text-center">
+          {isUploading ? 'Uploading to Meta...' : existingId ? `Meta ID: ${existingId}` : 'Drag & drop or click to upload video file'}
+        </span>
+        {error && <span className="text-[8px] text-red-500 mt-1 text-center">{error}</span>}
+      </div>
+    </div>
+  );
+};
+
+const ImageUploader = ({ 
+  label, 
+  onUpload, 
+  clientId, 
+  existingHash 
+}: { 
+  label: string, 
+  onUpload: (hash: string) => void, 
+  clientId: string,
+  existingHash?: string
+}) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file.');
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('clientId', clientId);
+
+    try {
+      const response = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const contentType = response.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 100)}...`);
+      }
+
+      if (!response.ok) throw new Error(data.error || 'Upload failed');
+      
+      onUpload(data.imageHash);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">{label}</label>
+      <div 
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleFile(e.dataTransfer.files[0]);
+          }
+        }}
+        className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all min-h-[100px] ${
+          existingHash ? 'border-green-500/30 bg-green-50/30' : 'border-[#5A5A40]/20 hover:border-[#5A5A40]/40 bg-white'
+        }`}
+      >
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          accept="image/*"
+          onChange={(e) => e.target.files && handleFile(e.target.files[0])}
+        />
+        {isUploading ? (
+          <Loader2 size={20} className="animate-spin text-[#5A5A40]" />
+        ) : existingHash ? (
+          <CheckCircle2 size={20} className="text-green-500" />
+        ) : (
+          <ImageIcon size={20} className="text-[#5A5A40]/40" />
+        )}
+        <span className="text-[10px] font-medium text-[#5A5A40]/60 text-center">
+          {isUploading ? 'Uploading to Meta...' : existingHash ? `Meta Hash: ${existingHash}` : 'Drag & drop or click to upload thumbnail'}
+        </span>
+        {error && <span className="text-[8px] text-red-500 mt-1 text-center">{error}</span>}
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const createDefaultBrief = (): CampaignBrief => {
     const today = new Date().toISOString().split('T')[0];
@@ -97,10 +287,11 @@ export default function App() {
       endDate: nextWeek,
       budget: 1000,
       budgetType: 'campaign',
+      createAudience: true,
       adSets: [
         {
           id: Math.random().toString(36).substr(2, 9),
-          name: 'Ad Set 1',
+          name: 'Segment R - Behavioural Retargeting - ',
           platformAccountId: '',
           locations: [],
           ads: [
@@ -112,7 +303,7 @@ export default function App() {
               copy: '',
               url: '',
               thumbnail: '',
-              ctaType: 'BOOK_NOW',
+              ctaType: 'BOOK_NOW', // Default objective is 'Sales'
               customUrlParams: defaultUrlParams
             }
           ]
@@ -183,6 +374,67 @@ export default function App() {
     }
   };
 
+  const handleImport = async () => {
+    if (!asanaUrl) {
+      setError('Please paste an Asana Task URL or Meta Campaign ID first.');
+      return;
+    }
+
+    if (!brief.clientId) {
+      setError('Please select a Client before importing.');
+      return;
+    }
+
+    const trimmedInput = asanaUrl.trim();
+    const isMetaId = /^\d{10,}$/.test(trimmedInput);
+
+    if (isMetaId) {
+      setImportCampaignId(trimmedInput);
+      await fetchCampaignData(trimmedInput);
+    } else {
+      await handleFetchBrief();
+    }
+  };
+
+  const fetchCampaignData = async (campaignId: string) => {
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('/api/fetch-campaign-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId, clientId: brief.clientId })
+      });
+
+      const contentType = response.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 100)}...`);
+      }
+      if (data.error) throw new Error(data.error);
+
+      setBrief({
+        ...data,
+        clientId: brief.clientId
+      });
+      
+      if (!data.adSets.every((as: any) => as.platformAccountId)) {
+        setSuccess('Campaign data imported, but some brands could not be matched automatically. Please select them manually.');
+      } else {
+        setSuccess('Campaign data imported successfully!');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleFetchBrief = async () => {
     if (!asanaUrl) {
       setError('Please paste an Asana Task URL first.');
@@ -213,7 +465,14 @@ export default function App() {
         body: JSON.stringify({ asanaUrl, csvData: csvText, csvName, clientId: brief.clientId }),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 100)}...`);
+      }
       if (!response.ok) throw new Error(data.error || 'Failed to fetch briefing sheet');
       
       const defaultUrlParams = "utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}";
@@ -228,10 +487,11 @@ export default function App() {
         endDate: data.endDate?.split('T')[0] || '',
         budget: data.budget,
         budgetType: 'campaign',
+        createAudience: true,
         adSets: [
           {
             id: Math.random().toString(36).substr(2, 9),
-            name: `Ad Set: ${data.movieName || data.movieTitle}`,
+            name: `Segment R - Behavioural Retargeting - ${data.movieName || data.movieTitle}`,
             platformAccountId: '', // User will select
             locations: data.locations,
             csvData: data.csvData,
@@ -247,7 +507,7 @@ export default function App() {
                 thumbnail: data.thumbnail,
                 feedVideoUrl: data.feedVideoUrl,
                 verticalVideoUrl: data.verticalVideoUrl,
-                ctaType: 'BOOK_NOW',
+                ctaType: (data.objective === 'Sales' || data.objective === 'CV') ? 'BOOK_NOW' : 'LEARN_MORE',
                 customUrlParams: defaultUrlParams
               }
             ]
@@ -255,48 +515,6 @@ export default function App() {
         ]
       };
       setBrief(initialBrief);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFetchCampaignData = async () => {
-    if (!importCampaignId) {
-      setError('Please paste a Meta Campaign ID first.');
-      return;
-    }
-
-    if (!brief.clientId) {
-      setError('Please select a Client before fetching campaign data.');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetch('/api/fetch-campaign-data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: importCampaignId, clientId: brief.clientId })
-      });
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-
-      setBrief({
-        ...data,
-        clientId: brief.clientId
-      });
-      
-      if (!data.adSets.every((as: any) => as.platformAccountId)) {
-        setSuccess('Campaign data imported, but some brands could not be matched automatically. Please select them manually.');
-      } else {
-        setSuccess('Campaign data imported successfully!');
-      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -327,10 +545,28 @@ export default function App() {
         body: JSON.stringify({ brief }),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 100)}...`);
+      }
       if (data.logs) setLogs(data.logs);
       if (!response.ok) {
         const errorMsg = data.error || 'Failed to launch campaign';
+        
+        // Check for specific video upload failure
+        if (errorMsg.startsWith('VIDEO_UPLOAD_FAILED:')) {
+          const [_, type, url] = errorMsg.split(':');
+          setError(`Automatic video upload failed for ${type} video. Please upload the file manually below.`);
+          // We don't throw here, we want to show the manual upload UI
+          setIsLaunching(false);
+          setIsLoading(false);
+          return;
+        }
+        
         throw new Error(errorMsg);
       }
       setSuccess(`Campaign launched successfully!`);
@@ -355,7 +591,7 @@ export default function App() {
     const sourceAdSet = brief.adSets[0];
     const newAdSet: AdSet = {
       id: Math.random().toString(36).substr(2, 9),
-      name: `New Ad Set ${brief.adSets.length + 1}`,
+      name: `Segment R - Behavioural Retargeting - ${brief.movieName}`,
       platformAccountId: sourceAdSet.platformAccountId,
       locations: [...sourceAdSet.locations],
       ads: sourceAdSet.ads.map(ad => ({
@@ -390,7 +626,7 @@ export default function App() {
       copy: '',
       url: '',
       thumbnail: '',
-      ctaType: 'BOOK_NOW',
+      ctaType: (brief.objective === 'Sales' || brief.objective === 'CV') ? 'BOOK_NOW' : 'LEARN_MORE',
       customUrlParams: defaultUrlParams,
       carouselCards: type === 'carousel' ? [
         { id: Math.random().toString(36).substr(2, 9), imageUrl: '', headline: '', url: '' }
@@ -461,7 +697,7 @@ export default function App() {
     }
     
     // Only update if it's different to avoid infinite loops
-    if (brief.campaignName !== newName && (brief.campaignName === 'New Campaign' || brief.campaignName === '' || brief.campaignName.includes(' - '))) {
+    if (brief.movieName && brief.campaignName !== newName && (brief.campaignName === 'New Campaign' || brief.campaignName === '' || brief.campaignName.includes(' - '))) {
       setBrief(prev => ({ ...prev, campaignName: newName }));
     }
   }, [brief.movieName, brief.clientId, brief.genre, brief.objective, brief.startDate, brief.endDate, clients]);
@@ -505,7 +741,7 @@ export default function App() {
               <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Client</label>
               <select
                 className="bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 shadow-inner text-sm w-56 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all appearance-none font-medium"
-                value={brief.clientId}
+                value={brief.clientId || ''}
                 onChange={(e) => {
                   const clientId = e.target.value;
                   setBrief({ 
@@ -523,16 +759,16 @@ export default function App() {
             </div>
 
             <div className="flex flex-col gap-2 text-left">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Asana Task URL</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Import Source (Asana or Meta ID)</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#5A5A40]/40">
                   <LinkIcon size={14} />
                 </div>
                 <input
                   type="text"
-                  placeholder="Paste Asana URL..."
-                  className="bg-[#F5F5F0] border-none rounded-2xl py-4 pl-11 pr-6 shadow-inner text-sm w-64 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all"
-                  value={asanaUrl}
+                  placeholder="Paste Asana URL or Meta ID..."
+                  className="bg-[#F5F5F0] border-none rounded-2xl py-4 pl-11 pr-6 shadow-inner text-sm w-80 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all"
+                  value={asanaUrl || ''}
                   onChange={(e) => setAsanaUrl(e.target.value)}
                 />
               </div>
@@ -548,37 +784,11 @@ export default function App() {
             </div>
 
             <button
-              onClick={handleFetchBrief}
+              onClick={handleImport}
               disabled={isLoading}
               className="bg-[#5A5A40] text-white px-8 py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-[#5A5A40]/20 hover:bg-[#4A4A30] hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 h-[52px]"
             >
-              {isLoading ? <Loader2 size={18} className="animate-spin" /> : 'Fetch from Asana'}
-            </button>
-
-            <div className="w-px h-12 bg-black/5 mx-1 hidden md:block" />
-
-            <div className="flex flex-col gap-2 text-left">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 ml-1">Import Meta Campaign</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#5A5A40]/40">
-                  <Sparkles size={14} />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Paste Campaign ID..."
-                  className="bg-[#F5F5F0] border-none rounded-2xl py-4 pl-11 pr-6 shadow-inner text-sm w-48 focus:ring-2 focus:ring-[#5A5A40] outline-none transition-all"
-                  value={importCampaignId}
-                  onChange={(e) => setImportCampaignId(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handleFetchCampaignData}
-              disabled={isLoading}
-              className="bg-[#141414] text-white px-8 py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-black/10 hover:bg-black hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 h-[52px]"
-            >
-              {isLoading ? <Loader2 size={18} className="animate-spin" /> : 'Import Campaign'}
+              {isLoading ? <Loader2 size={18} className="animate-spin" /> : 'Import'}
             </button>
           </motion.div>
         </header>
@@ -605,8 +815,22 @@ export default function App() {
                         <input
                           type="text"
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-lg font-medium"
-                          value={brief.movieName}
-                          onChange={(e) => setBrief({ ...brief, movieName: e.target.value })}
+                          value={brief.movieName || ''}
+                          onChange={(e) => {
+                            const newVal = e.target.value;
+                            const oldVal = brief.movieName;
+                            setBrief({ 
+                              ...brief, 
+                              movieName: newVal,
+                              adSets: brief.adSets.map(as => {
+                                const defaultPrefix = 'Segment R - Behavioural Retargeting - ';
+                                if (as.name === defaultPrefix + oldVal || as.name === defaultPrefix) {
+                                  return { ...as, name: defaultPrefix + newVal };
+                                }
+                                return as;
+                              })
+                            });
+                          }}
                         />
                       </div>
                       <div className="col-span-1">
@@ -615,10 +839,23 @@ export default function App() {
                           type="text"
                           placeholder="e.g. Action, Drama..."
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-lg font-medium"
-                          value={brief.genre}
+                          value={brief.genre || ''}
                           onChange={(e) => setBrief({ ...brief, genre: e.target.value })}
                         />
                       </div>
+                      <div className="col-span-1 flex items-center gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 block">Create Audience</label>
+                          <span className="text-[10px] text-[#5A5A40]/60 italic">Based on Movie Name</span>
+                        </div>
+                        <button
+                          onClick={() => setBrief({ ...brief, createAudience: !brief.createAudience })}
+                          className={`w-12 h-6 rounded-full transition-all relative ${brief.createAudience ? 'bg-[#5A5A40]' : 'bg-[#5A5A40]/20'}`}
+                        >
+                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${brief.createAudience ? 'left-7' : 'left-1'}`} />
+                        </button>
+                      </div>
+                      
                       <div className="col-span-1">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Budget Type</label>
                         <div className="flex bg-[#F5F5F0] p-1 rounded-2xl h-[60px]">
@@ -641,7 +878,7 @@ export default function App() {
                         <input
                           type="text"
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-lg font-medium"
-                          value={brief.campaignName}
+                          value={brief.campaignName || ''}
                           onChange={(e) => setBrief({ ...brief, campaignName: e.target.value })}
                         />
                       </div>
@@ -649,7 +886,7 @@ export default function App() {
                         <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Objective</label>
                         <select
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
-                          value={brief.objective}
+                          value={brief.objective || ''}
                           onChange={(e) => setBrief({ ...brief, objective: e.target.value })}
                         >
                           <option value="Sales">Sales</option>
@@ -667,7 +904,7 @@ export default function App() {
                         <input
                           type="date"
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                          value={brief.startDate}
+                          value={brief.startDate || ''}
                           onChange={(e) => setBrief({ ...brief, startDate: e.target.value })}
                         />
                       </div>
@@ -678,7 +915,7 @@ export default function App() {
                         <input
                           type="date"
                           className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                          value={brief.endDate}
+                          value={brief.endDate || ''}
                           onChange={(e) => setBrief({ ...brief, endDate: e.target.value })}
                         />
                       </div>
@@ -690,7 +927,7 @@ export default function App() {
                           <input
                             type="number"
                             className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                            value={brief.budget}
+                            value={brief.budget ?? 0}
                             onChange={(e) => setBrief({ ...brief, budget: parseFloat(e.target.value) })}
                           />
                         </div>
@@ -738,7 +975,7 @@ export default function App() {
                             <input
                               type="text"
                               className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium"
-                              value={adSet.name}
+                              value={adSet.name || ''}
                               onChange={(e) => updateAdSet(adSet.id, { name: e.target.value })}
                             />
                           </div>
@@ -746,7 +983,7 @@ export default function App() {
                             <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Brand / Account</label>
                             <select
                               className="w-full bg-[#F5F5F0] border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium appearance-none"
-                              value={adSet.platformAccountId}
+                              value={adSet.platformAccountId || ''}
                               onChange={(e) => updateAdSet(adSet.id, { platformAccountId: e.target.value })}
                             >
                               <option value="">Select Brand...</option>
@@ -861,7 +1098,7 @@ export default function App() {
                           </div>
 
                           <div className="grid grid-cols-1 gap-6">
-                            {adSet.ads.map((ad, aIndex) => (
+                            {adSet.ads.map((ad, aIndex) => ad && (
                               <div key={ad.id} className="bg-[#F5F5F0] rounded-2xl p-6 relative group">
                                 <button 
                                   onClick={() => removeAd(adSet.id, ad.id)}
@@ -885,7 +1122,7 @@ export default function App() {
                                     <input
                                       type="text"
                                       className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-medium"
-                                      value={ad.adName}
+                                      value={ad.adName || ''}
                                       onChange={(e) => updateAd(adSet.id, ad.id, { adName: e.target.value })}
                                     />
                                   </div>
@@ -895,7 +1132,7 @@ export default function App() {
                                       <input
                                         type="text"
                                         className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                                        value={ad.headline}
+                                        value={ad.headline || ''}
                                         onChange={(e) => updateAd(adSet.id, ad.id, { headline: e.target.value })}
                                       />
                                     </div>
@@ -903,7 +1140,7 @@ export default function App() {
                                       <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Ad Copy</label>
                                       <textarea
                                         className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm min-h-[100px]"
-                                        value={ad.copy}
+                                        value={ad.copy || ''}
                                         onChange={(e) => updateAd(adSet.id, ad.id, { copy: e.target.value })}
                                       />
                                     </div>
@@ -918,7 +1155,7 @@ export default function App() {
                                         <input
                                           type="text"
                                           className="w-full bg-white border-none rounded-xl py-3 pl-9 pr-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                                          value={ad.url}
+                                          value={ad.url || ''}
                                           onChange={(e) => updateAd(adSet.id, ad.id, { url: e.target.value })}
                                         />
                                       </div>
@@ -930,9 +1167,13 @@ export default function App() {
                                         placeholder="Existing Meta Ad ID..."
                                         className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
                                         value={ad.manualAdId || ''}
-                                        onChange={(e) => updateAd(adSet.id, ad.id, { manualAdId: e.target.value })}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          updateAd(adSet.id, ad.id, { manualAdId: val });
+                                        }}
                                       />
                                     </div>
+
                                     <div className="md:col-span-2">
                                       <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">URL Parameters</label>
                                       <input
@@ -958,33 +1199,57 @@ export default function App() {
                                       </select>
                                     </div>
                                     <div>
-                                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Thumbnail URL</label>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Thumbnail URL (Auto-download)</label>
                                       <input
                                         type="text"
                                         className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                                        value={ad.thumbnail}
+                                        value={ad.thumbnail || ''}
                                         onChange={(e) => updateAd(adSet.id, ad.id, { thumbnail: e.target.value })}
                                       />
                                     </div>
+                                    <ImageUploader 
+                                      label="Manual Thumbnail Upload"
+                                      clientId={brief.clientId}
+                                      existingHash={ad.manualThumbnailHash}
+                                      onUpload={(hash) => updateAd(adSet.id, ad.id, { manualThumbnailHash: hash })}
+                                    />
                                     {ad.type === 'video' && (
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                          <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Feed Video</label>
-                                          <input
-                                            type="text"
-                                            className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-[10px]"
-                                            value={ad.feedVideoUrl}
-                                            onChange={(e) => updateAd(adSet.id, ad.id, { feedVideoUrl: e.target.value })}
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Vertical Video</label>
-                                          <input
-                                            type="text"
-                                            className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-[10px]"
-                                            value={ad.verticalVideoUrl}
-                                            onChange={(e) => updateAd(adSet.id, ad.id, { verticalVideoUrl: e.target.value })}
-                                          />
+                                      <div className="col-span-2 space-y-6 mt-4 pt-4 border-t border-black/5">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                          <div className="space-y-4">
+                                            <div>
+                                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Feed Video URL (Auto-download)</label>
+                                              <input
+                                                type="text"
+                                                className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-[10px]"
+                                                value={ad.feedVideoUrl || ''}
+                                                onChange={(e) => updateAd(adSet.id, ad.id, { feedVideoUrl: e.target.value })}
+                                              />
+                                            </div>
+                                            <VideoUploader 
+                                              label="Manual Feed Video Upload"
+                                              clientId={brief.clientId}
+                                              existingId={ad.manualFeedVideoId}
+                                              onUpload={(id) => updateAd(adSet.id, ad.id, { manualFeedVideoId: id })}
+                                            />
+                                          </div>
+                                          <div className="space-y-4">
+                                            <div>
+                                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Vertical Video URL (Auto-download)</label>
+                                              <input
+                                                type="text"
+                                                className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-[10px]"
+                                                value={ad.verticalVideoUrl || ''}
+                                                onChange={(e) => updateAd(adSet.id, ad.id, { verticalVideoUrl: e.target.value })}
+                                              />
+                                            </div>
+                                            <VideoUploader 
+                                              label="Manual Vertical Video Upload"
+                                              clientId={brief.clientId}
+                                              existingId={ad.manualVerticalVideoId}
+                                              onUpload={(id) => updateAd(adSet.id, ad.id, { manualVerticalVideoId: id })}
+                                            />
+                                          </div>
                                         </div>
                                       </div>
                                     )}
@@ -1019,7 +1284,7 @@ export default function App() {
                                                   <input
                                                     type="text"
                                                     className="w-full bg-[#F5F5F0] border-none rounded-lg py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-[#5A5A40]"
-                                                    value={card.imageUrl}
+                                                    value={card.imageUrl || ''}
                                                     onChange={(e) => {
                                                       const newCards = ad.carouselCards?.map(c => c.id === card.id ? { ...c, imageUrl: e.target.value } : c);
                                                       updateAd(adSet.id, ad.id, { carouselCards: newCards });
@@ -1031,7 +1296,7 @@ export default function App() {
                                                   <input
                                                     type="text"
                                                     className="w-full bg-[#F5F5F0] border-none rounded-lg py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-[#5A5A40]"
-                                                    value={card.headline}
+                                                    value={card.headline || ''}
                                                     onChange={(e) => {
                                                       const newCards = ad.carouselCards?.map(c => c.id === card.id ? { ...c, headline: e.target.value } : c);
                                                       updateAd(adSet.id, ad.id, { carouselCards: newCards });
@@ -1043,7 +1308,7 @@ export default function App() {
                                                   <input
                                                     type="text"
                                                     className="w-full bg-[#F5F5F0] border-none rounded-lg py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-[#5A5A40]"
-                                                    value={card.url}
+                                                    value={card.url || ''}
                                                     onChange={(e) => {
                                                       const newCards = ad.carouselCards?.map(c => c.id === card.id ? { ...c, url: e.target.value } : c);
                                                       updateAd(adSet.id, ad.id, { carouselCards: newCards });

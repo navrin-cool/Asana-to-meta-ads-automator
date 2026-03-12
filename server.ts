@@ -5,7 +5,60 @@ import fetch from "node-fetch";
 import crypto from "crypto";
 import Database from "better-sqlite3";
 import fs from "fs";
+import path from "path";
+import os from "os";
+import { pipeline } from "stream";
+import { promisify } from "util";
+import multer from "multer";
+import FormData from "form-data";
 import { parse } from "csv-parse/sync";
+
+const streamPipeline = promisify(pipeline);
+const upload = multer({ dest: os.tmpdir() });
+
+// Helper to download a file from a URL to a temporary path
+const downloadFile = async (url: string): Promise<string> => {
+  if (!url || !url.startsWith("http")) {
+    throw new Error(`Invalid URL provided for download: "${url}"`);
+  }
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok) throw new Error(`Failed to download file from ${url}: ${response.statusText}`);
+  
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("text/html")) {
+    throw new Error(`The URL provided returned an HTML page instead of a file. This often happens with Google Drive or Dropbox links that are not direct download links, or if the file is too large and shows a virus scan warning. URL: ${url}`);
+  }
+  let ext = "";
+  if (contentType.includes("video/mp4")) ext = ".mp4";
+  else if (contentType.includes("video/quicktime")) ext = ".mov";
+  else if (contentType.includes("image/jpeg")) ext = ".jpg";
+  else if (contentType.includes("image/png")) ext = ".png";
+  else if (contentType.includes("image/gif")) ext = ".gif";
+  
+  // Try to get from URL if content-type is generic
+  if (!ext) {
+    try {
+      const urlPath = new URL(url).pathname;
+      const urlExt = path.extname(urlPath);
+      if (urlExt && urlExt.length < 6) ext = urlExt;
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+  }
+  
+  const tempPath = path.join(os.tmpdir(), `meta_asset_${crypto.randomBytes(8).toString("hex")}${ext || '.bin'}`);
+  const fileStream = fs.createWriteStream(tempPath);
+  
+  await new Promise((resolve, reject) => {
+    if (!response.body) return reject(new Error("Response body is null"));
+    response.body.pipe(fileStream);
+    response.body.on("error", reject);
+    fileStream.on("finish", () => resolve(tempPath));
+    fileStream.on("error", reject);
+  });
+  
+  return tempPath;
+};
 
 dotenv.config();
 
@@ -202,10 +255,22 @@ seedDatabase();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Helper to wait for Meta video processing
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper to safely parse JSON from a fetch response
+const safeJson = async (response: any, context: string) => {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error(`JSON Parse Error in ${context}:`, text.substring(0, 500));
+    throw new Error(`Invalid JSON response from Meta (${context}). The server returned HTML instead of JSON. This often happens if the API endpoint is wrong or there's a proxy error. Response start: ${text.substring(0, 100)}...`);
+  }
+};
 
 // Helper to convert Drive/Dropbox links to download links
 const getDownloadUrl = (url: string) => {
@@ -227,7 +292,9 @@ const getDownloadUrl = (url: string) => {
     const match = cleanUrl.match(/\/d\/([^/]+)/) || cleanUrl.match(/id=([^&]+)/);
     if (match) {
       // Use the standard direct download endpoint
-      return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+      // Note: Large files (>100MB) may still fail due to Google's virus scan warning
+      // Adding &confirm=t can sometimes bypass the virus scan warning for public files
+      return `https://drive.google.com/uc?id=${match[1]}&export=download&confirm=t`;
     }
   }
   
@@ -289,7 +356,7 @@ class MetaAdsService {
         access_token: this.token
       })
     });
-    const result = await response.json() as any;
+    const result = await safeJson(response, "createCampaign");
     if (result.error) {
       const errorMsg = `Meta Campaign Error: ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
       const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
@@ -308,7 +375,7 @@ class MetaAdsService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, access_token: this.token })
     });
-    const result = await response.json() as any;
+    const result = await safeJson(response, "createAdSet");
     if (result.error) {
       const errorMsg = `Meta Ad Set Error: ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
       const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
@@ -317,19 +384,76 @@ class MetaAdsService {
     return result.id;
   }
 
-  async uploadVideo(url: string) {
-    const response = await fetch(`https://graph.facebook.com/v22.0/${this.adAccountId}/advideos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_url: url, access_token: this.token })
-    });
-    const result = await response.json() as any;
-    if (result.error) {
-      const errorMsg = `Video Upload Error: ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
-      const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
-      throw new Error(`${errorMsg}${userMsg}`);
+  async uploadVideo(source: string, isLocalFile: boolean = false) {
+    this.addStatus(`Uploading video from ${isLocalFile ? 'local file' : 'URL'}...`);
+    if (isLocalFile) {
+      const form = new FormData();
+      form.append("source", fs.createReadStream(source), { filename: path.basename(source) });
+      form.append("access_token", this.token);
+      
+      const headers = form.getHeaders();
+      const response = await fetch(`https://graph.facebook.com/v22.0/${this.adAccountId}/advideos`, {
+        method: "POST",
+        headers: headers,
+        body: form as any
+      });
+      const result = await safeJson(response, "uploadVideo (Local)");
+      if (result.error) {
+        const errorMsg = `Video Upload Error (Local): ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
+        const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
+        console.error(errorMsg, result.error);
+        throw new Error(`${errorMsg}${userMsg}`);
+      }
+      return result.id;
+    } else {
+      const response = await fetch(`https://graph.facebook.com/v22.0/${this.adAccountId}/advideos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_url: source, access_token: this.token })
+      });
+      const result = await safeJson(response, "uploadVideo (URL)");
+      if (result.error) {
+        const errorMsg = `Video Upload Error (URL): ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
+        const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
+        console.error(errorMsg, result.error);
+        throw new Error(`${errorMsg}${userMsg}`);
+      }
+      return result.id;
     }
-    return result.id;
+  }
+
+  async uploadImage(source: string, isLocalFile: boolean = false) {
+    this.addStatus(`Uploading image from ${isLocalFile ? 'local file' : 'URL'}...`);
+    if (isLocalFile) {
+      const form = new FormData();
+      form.append("filename", fs.createReadStream(source), { filename: path.basename(source) });
+      form.append("access_token", this.token);
+      
+      const headers = form.getHeaders();
+      const response = await fetch(`https://graph.facebook.com/v22.0/${this.adAccountId}/adimages`, {
+        method: "POST",
+        headers: headers,
+        body: form as any
+      });
+      const result = await safeJson(response, "uploadImage (Local)");
+      if (result.error) {
+        const errorMsg = `Image Upload Error (Local): ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
+        console.error(errorMsg, result.error);
+        throw new Error(errorMsg);
+      }
+      if (!result.images || Object.keys(result.images).length === 0) {
+        throw new Error(`Image Upload Error: Meta returned success but no image hash was found in the response. Response: ${JSON.stringify(result)}`);
+      }
+      const firstImage = Object.values(result.images)[0] as any;
+      return firstImage.hash;
+    } else {
+      const tempFile = await downloadFile(source);
+      try {
+        return await this.uploadImage(tempFile, true);
+      } finally {
+        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      }
+    }
   }
 
   async createCreative(payload: any) {
@@ -338,12 +462,57 @@ class MetaAdsService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, access_token: this.token })
     });
-    const result = await response.json() as any;
+    const result = await safeJson(response, "createCreative");
     if (result.error) {
-      console.error("Creative Payload that failed:", JSON.stringify(payload, null, 2));
+      const payloadStr = JSON.stringify(payload, null, 2);
+      console.error("Creative Payload that failed:", payloadStr);
+      this.addStatus(`Creative Error Details: ${result.error.message}`);
+      this.addStatus(`Failed Payload: ${payloadStr}`);
       const errorMsg = `Creative Error: ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
       const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
       throw new Error(`${errorMsg}${userMsg}`);
+    }
+    return result.id;
+  }
+
+  async createWebsiteAudience(movieName: string) {
+    this.addStatus(`Creating Website Audience (Exclusion) for: ${movieName}...`);
+    if (!this.pixelId) {
+      this.addStatus("Warning: No Pixel ID found. Skipping audience creation.");
+      return null;
+    }
+
+    const payload = {
+      name: `Exclusion - ${movieName} - Purchasers (180d)`,
+      subtype: "WEBSITE",
+      retention_days: 180,
+      pixel_id: this.pixelId,
+      rule: JSON.stringify({
+        and: [
+          {
+            event_name: "Purchase",
+            filters: [
+              {
+                field: "content_name",
+                operator: "i_contains",
+                value: movieName
+              }
+            ]
+          }
+        ]
+      }),
+      access_token: this.token
+    };
+
+    const response = await fetch(`https://graph.facebook.com/v22.0/${this.adAccountId}/customaudiences`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await safeJson(response, "createWebsiteAudience");
+    if (result.error) {
+      this.addStatus(`Warning: Audience Creation Error: ${result.error.message}`);
+      return null;
     }
     return result.id;
   }
@@ -354,7 +523,7 @@ class MetaAdsService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, access_token: this.token })
     });
-    const result = await response.json() as any;
+    const result = await safeJson(response, "createAd");
     if (result.error) {
       const errorMsg = `Ad Error: ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
       const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
@@ -379,7 +548,7 @@ class MetaAdsService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    const result = await response.json() as any;
+    const result = await safeJson(response, "createCustomAudience");
     if (result.error) {
       const errorMsg = `Audience Error: ${result.error.message} (Type: ${result.error.type}, Code: ${result.error.code}, Subcode: ${result.error.error_subcode})`;
       const userMsg = result.error.error_user_msg ? `\nUser Message: ${result.error.error_user_msg}` : "";
@@ -423,7 +592,7 @@ const waitForVideoProcessing = async (videoId: string, metaToken: string, addSta
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const response = await fetch(`https://graph.facebook.com/v22.0/${videoId}?fields=status&access_token=${metaToken}`);
-      const data = await response.json() as any;
+      const data = await safeJson(response, "waitForVideoProcessing");
 
       if (data.error) {
         addStatus(`Error checking video status: ${data.error.message}`);
@@ -431,14 +600,16 @@ const waitForVideoProcessing = async (videoId: string, metaToken: string, addSta
       }
 
       const status = data.status?.video_status;
-      addStatus(`Video ${videoId} status: ${status} (Attempt ${attempt}/${maxAttempts})`);
+      const errorDescription = data.status?.error_description || "";
+      addStatus(`Video ${videoId} status: ${status} ${errorDescription ? `(${errorDescription})` : ''} (Attempt ${attempt}/${maxAttempts})`);
 
       if (status === 'ready') {
         return true;
       }
 
       if (status === 'error') {
-        addStatus(`Meta reported an error processing video ${videoId}.`);
+        addStatus(`Meta reported an error processing video ${videoId}: ${errorDescription || 'No detailed error description provided by Meta.'}`);
+        addStatus(`Common causes: Invalid video format, file too large, or the source link (Google Drive/Dropbox) is not direct or has restricted access.`);
         return false;
       }
 
@@ -540,7 +711,9 @@ app.post("/api/fetch-brief", async (req, res) => {
     const customFields = asanaData.data.custom_fields;
     const getField = (name: string) => {
       const field = customFields.find((f: any) => f.name === name);
-      return (field?.display_value || "").trim() || name.toUpperCase();
+      const val = (field?.display_value || "").trim();
+      if (!val) return "";
+      return val;
     };
 
     const rawObjective = getField("Objective");
@@ -592,8 +765,7 @@ app.post("/api/fetch-brief", async (req, res) => {
       feedVideoUrl: getDownloadUrl(getField("Feed Video 1")),
       verticalVideoUrl: getDownloadUrl(getField("Vertical Video 1")),
       csvData,
-      csvName,
-      instagramUserId: getField("Instagram Page ID") || ""
+      csvName
     };
 
     res.json(brief);
@@ -628,7 +800,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
 
     // 3. Fetch Ads & Creatives
     for (const metaAdSet of adSetsData.data) {
-      const adsRes = await fetch(`https://graph.facebook.com/v22.0/${metaAdSet.id}/ads?fields=id,name,creative{id,name,object_story_spec,body,title,image_url,instagram_actor_id},url_tags&access_token=${token}`);
+      const adsRes = await fetch(`https://graph.facebook.com/v22.0/${metaAdSet.id}/ads?fields=id,name,creative{id,name,object_story_spec,effective_object_story_id,body,title,image_url,instagram_actor_id,video_id},url_tags&access_token=${token}`);
       const adsData = await adsRes.json() as any;
       if (adsData.error) throw new Error(`Meta Ads Error: ${adsData.error.message}`);
 
@@ -636,8 +808,40 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
       let detectedBrandId = "";
 
       for (const metaAd of adsData.data) {
-        const creative = metaAd.creative;
-        const storySpec = creative?.object_story_spec;
+        let creative = metaAd.creative;
+        let storySpec = creative?.object_story_spec;
+        let headline = creative?.title || "";
+        let copy = creative?.body || "";
+        let url = "";
+        let ctaType = "LEARN_MORE";
+        let type: 'video' | 'image' | 'carousel' = 'image';
+        let thumbnail = creative?.image_url || "";
+        let carouselCards: any[] = [];
+        let feedVideoUrl = "";
+        let manualFeedVideoId = creative?.video_id || "";
+
+        if (manualFeedVideoId) {
+          type = 'video';
+        }
+
+        // If story_spec is missing, try to fetch it from effective_object_story_id
+        if (!storySpec && creative?.effective_object_story_id) {
+          try {
+            const storyRes = await fetch(`https://graph.facebook.com/v22.0/${creative.effective_object_story_id}?fields=object_story_spec,link,type,source&access_token=${token}`);
+            const storyData = await storyRes.json() as any;
+            if (storyData.object_story_spec) {
+              storySpec = storyData.object_story_spec;
+            }
+            if (!url && storyData.link) {
+              url = storyData.link;
+            }
+            if (storyData.type === 'video') {
+              type = 'video';
+            }
+          } catch (e) {
+            console.error("Failed to fetch effective object story spec", e);
+          }
+        }
         
         // Determine Brand if not already set for this ad set
         if (!detectedBrandId && creative) {
@@ -653,20 +857,6 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
           }
         }
 
-        let headline = creative?.title || "";
-        let copy = creative?.body || "";
-        let url = "";
-        let ctaType = "LEARN_MORE";
-        let type: 'video' | 'image' | 'carousel' = 'image';
-        let thumbnail = creative?.image_url || "";
-        let carouselCards: any[] = [];
-        let feedVideoUrl = "";
-
-        // Improved detection: Check if it's a video
-        if (storySpec?.video_data) {
-          type = 'video';
-        }
-
         if (storySpec) {
           const linkData = storySpec.link_data;
           const videoData = storySpec.video_data;
@@ -675,13 +865,14 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
             type = 'video';
             headline = videoData.title || headline;
             copy = videoData.message || copy;
-            url = videoData.call_to_action?.value?.link || "";
+            url = videoData.call_to_action?.value?.link || videoData.link_url || url;
             ctaType = videoData.call_to_action?.type || ctaType;
             thumbnail = videoData.image_url || thumbnail;
+            if (videoData.video_id) manualFeedVideoId = videoData.video_id;
           } else if (linkData) {
             headline = linkData.name || headline;
             copy = linkData.message || copy;
-            url = linkData.link || "";
+            url = linkData.link || linkData.call_to_action?.value?.link || url;
             ctaType = linkData.call_to_action?.type || ctaType;
             thumbnail = linkData.image_url || thumbnail;
             
@@ -696,8 +887,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
             }
           }
         } else {
-          // Fallback if story_spec is missing (common for existing posts)
-          // Try to fetch the effective object story id if possible, but for now use creative fields
+          // Fallback if story_spec is missing
           if (creative?.body) copy = creative.body;
           if (creative?.title) headline = creative.title;
         }
@@ -712,6 +902,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
           thumbnail,
           ctaType,
           manualAdId: metaAd.id,
+          manualFeedVideoId: manualFeedVideoId || undefined,
           customUrlParams: metaAd.url_tags || "",
           carouselCards: carouselCards.length > 0 ? carouselCards : undefined
         });
@@ -741,7 +932,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
 
     const brief = {
       clientId: clientId.toString(),
-      movieName: campaignData.name,
+      movieName: "",
       campaignName: campaignData.name,
       objective: displayObjective,
       startDate: campaignData.start_time?.split('T')[0] || "",
@@ -778,6 +969,39 @@ app.post("/api/process-asana", async (req, res) => {
     // Step 1: Create Campaign
     const campaignId = await metaService.createCampaign(campaignName, objective, budget, budgetType);
 
+    let campaignExclusionId = null;
+    if (brief.createAudience && creds.pixelId && creds.pixelId !== "") {
+      addStatus(`Creating Exclusion Audience for ${movieName} using Pixel: ${creds.pixelId}...`);
+      const exclusionRule = {
+        inclusions: {
+          operator: "or",
+          rules: [
+            {
+              event_sources: [{ type: "pixel", id: String(creds.pixelId) }],
+              retention_seconds: 15552000,
+              filter: {
+                operator: "and",
+                filters: [
+                  { field: "event", operator: "eq", value: "Purchase" },
+                  { field: "content_name", operator: "i_contains", value: String(movieName || campaignName.replace("Campaign: ", "")) }
+                ]
+              }
+            }
+          ]
+        }
+      };
+
+      try {
+        campaignExclusionId = await metaService.createCustomAudience(
+          `Palace - ${movieName} (Purchase) - 180 days`,
+          "WEBSITE",
+          exclusionRule
+        );
+      } catch (e: any) {
+        addStatus(`Exclusion audience creation failed: ${e.message}`);
+      }
+    }
+
     // Step 2: Process Ad Sets
     for (const adSet of adSets) {
       addStatus(`Processing Ad Set: ${adSet.name}...`);
@@ -791,7 +1015,7 @@ app.post("/api/process-asana", async (req, res) => {
       let targeting: any = {
         targeting_automation: { advantage_audience: 0 },
         publisher_platforms: ["facebook", "instagram"],
-        facebook_positions: ["feed", "story", "facebook_reels", "profile_feed", "search"],
+        facebook_positions: ["feed", "story", "facebook_reels", "profile_feed", "instream_video"],
         instagram_positions: ["stream", "story", "explore", "reels", "profile_feed"]
       };
 
@@ -856,40 +1080,8 @@ app.post("/api/process-asana", async (req, res) => {
       }
 
       // C: Exclusion Audience
-      if (creds.pixelId && creds.pixelId !== "") {
-        addStatus(`Creating Exclusion Audience for ${adSet.name} using Pixel: ${creds.pixelId}...`);
-        const exclusionRule = {
-          inclusions: {
-            operator: "or",
-            rules: [
-              {
-                event_sources: [{ type: "pixel", id: String(creds.pixelId) }],
-                retention_seconds: 15552000,
-                filter: {
-                  operator: "and",
-                  filters: [
-                    { field: "event", operator: "eq", value: "Purchase" },
-                    { field: "content_name", operator: "i_contains", value: String(movieName || campaignName.replace("Campaign: ", "")) }
-                  ]
-                }
-              }
-            ]
-          }
-        };
-
-        try {
-          const exclusionId = await metaService.createCustomAudience(
-            `Palace - ${adSet.name} (Purchase) - 180 days`,
-            "WEBSITE",
-            exclusionRule
-          );
-          targeting.excluded_custom_audiences = [{ id: exclusionId }];
-        } catch (e: any) {
-          addStatus(`Exclusion audience failed: ${e.message}`);
-          // If exclusion fails, we still want to try creating the ad set
-        }
-      } else {
-        addStatus(`Warning: No Pixel ID found for client. Skipping exclusion audience creation.`);
+      if (campaignExclusionId) {
+        targeting.excluded_custom_audiences = [{ id: campaignExclusionId }];
       }
 
       // D: Create Ad Set
@@ -924,15 +1116,24 @@ app.post("/api/process-asana", async (req, res) => {
           { event_type: "VIEW_THROUGH", window_days: 1 },
           { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 }
         ];
+      } else if (objective === "Reach") {
+        adSetPayload.promoted_object = { page_id: String(brand.meta_page_id) };
       }
 
       const adSetId = await metaService.createAdSet(adSetPayload);
 
-      // Step 3: Create Ads
-      for (const ad of adSet.ads) {
-        addStatus(`Creating Ad: ${ad.adName || ad.headline || 'Untitled Ad'}...`);
+        // Step 3: Create Ads
+        for (const ad of adSet.ads) {
+          addStatus(`Creating Ad: ${ad.adName || ad.headline || 'Untitled Ad'}...`);
 
-        let creativeId = null;
+          // Validate URL
+          const destinationUrl = (ad.url || "").trim();
+          if (!destinationUrl) {
+            throw new Error(`Ad "${ad.adName || ad.headline}" is missing a destination URL. Please check the Asana task or ad settings.`);
+          }
+          ad.url = destinationUrl;
+
+          let creativeId = null;
 
         if (ad.manualAdId) {
           creativeId = await metaService.getExistingCreative(ad.manualAdId);
@@ -945,12 +1146,40 @@ app.post("/api/process-asana", async (req, res) => {
           const verticalUrl = ad.verticalVideoUrl ? getDownloadUrl(ad.verticalVideoUrl) : null;
           const thumbnailUrl = ad.thumbnail ? getDownloadUrl(ad.thumbnail) : "https://picsum.photos/1200/628";
 
-          const feedVideoId = await metaService.uploadVideo(feedUrl);
-          let verticalVideoId = null;
-          if (verticalUrl) {
+          let feedVideoId = ad.manualFeedVideoId;
+          let verticalVideoId = ad.manualVerticalVideoId;
+
+          if (!feedVideoId) {
+            if (!feedUrl) {
+              throw new Error(`Feed video URL is missing for ad "${ad.adName || ad.headline}". Please check the Asana task.`);
+            }
+            addStatus(`Attempting to download and upload feed video from: ${feedUrl}`);
+            let tempFile = null;
             try {
-              verticalVideoId = await metaService.uploadVideo(verticalUrl);
-            } catch (e) {}
+              tempFile = await downloadFile(feedUrl);
+              feedVideoId = await metaService.uploadVideo(tempFile, true);
+              addStatus(`Feed video uploaded successfully. ID: ${feedVideoId}`);
+            } catch (e) {
+              addStatus(`Automatic feed video upload failed: ${e instanceof Error ? e.message : String(e)}`);
+              throw new Error(`VIDEO_UPLOAD_FAILED:FEED:${feedUrl}`);
+            } finally {
+              if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+            }
+          }
+
+          if (verticalUrl && !verticalVideoId) {
+            addStatus(`Attempting to download and upload vertical video from: ${verticalUrl}`);
+            let tempFile = null;
+            try {
+              tempFile = await downloadFile(verticalUrl);
+              verticalVideoId = await metaService.uploadVideo(tempFile, true);
+              addStatus(`Vertical video uploaded successfully. ID: ${verticalVideoId}`);
+            } catch (e) {
+              addStatus(`Warning: Vertical video automatic upload failed: ${e instanceof Error ? e.message : String(e)}`);
+              // We don't throw here, just warn, as vertical is often optional
+            } finally {
+              if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+            }
           }
 
           const feedReady = await waitForVideoProcessing(feedVideoId, creds.token, addStatus);
@@ -964,13 +1193,23 @@ app.post("/api/process-asana", async (req, res) => {
             }
           }
 
+          let thumbnailHash = ad.manualThumbnailHash;
+          if (!thumbnailHash && thumbnailUrl && thumbnailUrl.startsWith("http")) {
+            addStatus(`Attempting to download and upload thumbnail from: ${thumbnailUrl}`);
+            try {
+              thumbnailHash = await metaService.uploadImage(thumbnailUrl);
+              addStatus(`Thumbnail uploaded successfully. Hash: ${thumbnailHash}`);
+            } catch (e) {
+              addStatus(`Warning: Thumbnail upload failed: ${e instanceof Error ? e.message : String(e)}. Falling back to URL.`);
+            }
+          }
+
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
             object_story_spec: {
               page_id: brand.meta_page_id,
               video_data: {
                 video_id: feedVideoId,
-                image_url: thumbnailUrl,
                 title: ad.headline,
                 message: ad.copy,
                 call_to_action: { type: ctaType, value: { link: ad.url } }
@@ -978,20 +1217,17 @@ app.post("/api/process-asana", async (req, res) => {
             }
           };
 
-          if (brand.instagram_page_id && /^\d+$/.test(brand.instagram_page_id)) {
-            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+          if (thumbnailHash) {
+            creativePayload.object_story_spec.video_data.image_hash = thumbnailHash;
+          } else {
+            creativePayload.object_story_spec.video_data.image_url = thumbnailUrl;
           }
-
-          creativePayload.degrees_of_freedom_spec = {
-            creative_features_spec: {
-              standard_enhancements: { enroll_status: "OPT_OUT" }
-            }
-          };
 
           if (verticalVideoId) {
             creativePayload.asset_customization_rules = [{
               customization_spec: { placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels"] },
-              video_id: verticalVideoId
+              video_id: verticalVideoId,
+              call_to_action: { type: ctaType, value: { link: ad.url } }
             }];
           }
 
@@ -999,7 +1235,7 @@ app.post("/api/process-asana", async (req, res) => {
         } else if (!creativeId && ad.type === 'carousel') {
           const cards = (ad.carouselCards && ad.carouselCards.length > 0) 
             ? ad.carouselCards.map((c: any) => ({ ...c, imageUrl: getDownloadUrl(c.imageUrl) }))
-            : [{ imageUrl: ad.thumbnail || "https://picsum.photos/1080/1080", headline: ad.headline, url: ad.url }];
+            : [{ imageUrl: getDownloadUrl(ad.thumbnail || "https://picsum.photos/1080/1080"), headline: ad.headline, url: ad.url }];
           
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
@@ -1009,33 +1245,51 @@ app.post("/api/process-asana", async (req, res) => {
                 link: ad.url,
                 message: ad.copy,
                 caption: ad.headline,
-                child_attachments: cards.map((card: any, idx: number) => ({
-                  link: card.url || ad.url,
-                  image_url: card.imageUrl,
-                  name: card.headline || `${ad.headline} - ${idx + 1}`,
-                  description: ad.copy.substring(0, 30),
-                  call_to_action: { type: ctaType, value: { link: card.url || ad.url } }
+                child_attachments: await Promise.all(cards.map(async (card: any, idx: number) => {
+                  let cardHash = null;
+                  try {
+                    addStatus(`Uploading carousel card ${idx + 1} image...`);
+                    cardHash = await metaService.uploadImage(card.imageUrl);
+                  } catch (e) {
+                    addStatus(`Warning: Carousel card ${idx + 1} image upload failed, falling back to URL.`);
+                  }
+                  
+                  const attachment: any = {
+                    link: card.url || ad.url,
+                    name: card.headline || `${ad.headline} - ${idx + 1}`,
+                    description: ad.copy.substring(0, 30),
+                    call_to_action: { type: ctaType, value: { link: card.url || ad.url } }
+                  };
+                  if (cardHash) {
+                    attachment.image_hash = cardHash;
+                  } else {
+                    attachment.image_url = card.imageUrl;
+                  }
+                  return attachment;
                 }))
               }
             }
           };
 
-          if (brand.instagram_page_id && /^\d+$/.test(brand.instagram_page_id)) {
-            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
-          }
-          creativePayload.degrees_of_freedom_spec = {
-            creative_features_spec: {
-              standard_enhancements: { enroll_status: "OPT_OUT" }
-            }
-          };
           creativeId = await metaService.createCreative(creativePayload);
         } else if (!creativeId && ad.type === 'image') {
+          const imageUrl = getDownloadUrl(ad.thumbnail || "https://picsum.photos/1200/628");
+          let imageHash = ad.manualThumbnailHash;
+          if (!imageHash) {
+            addStatus(`Attempting to download and upload image from: ${imageUrl}`);
+            try {
+              imageHash = await metaService.uploadImage(imageUrl);
+              addStatus(`Image uploaded successfully. Hash: ${imageHash}`);
+            } catch (e) {
+              addStatus(`Warning: Image upload failed: ${e instanceof Error ? e.message : String(e)}. Falling back to URL.`);
+            }
+          }
+
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
             object_story_spec: {
               page_id: brand.meta_page_id,
               link_data: {
-                image_url: ad.thumbnail || "https://picsum.photos/1200/628",
                 link: ad.url,
                 message: ad.copy,
                 name: ad.headline,
@@ -1044,14 +1298,12 @@ app.post("/api/process-asana", async (req, res) => {
             }
           };
 
-          if (brand.instagram_page_id && /^\d+$/.test(brand.instagram_page_id)) {
-            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+          if (imageHash) {
+            creativePayload.object_story_spec.link_data.image_hash = imageHash;
+          } else {
+            creativePayload.object_story_spec.link_data.image_url = imageUrl;
           }
-          creativePayload.degrees_of_freedom_spec = {
-            creative_features_spec: {
-              standard_enhancements: { enroll_status: "OPT_OUT" }
-            }
-          };
+
           creativeId = await metaService.createCreative(creativePayload);
         }
 
@@ -1060,9 +1312,11 @@ app.post("/api/process-asana", async (req, res) => {
             name: ad.adName || `Ad: ${ad.headline}`,
             adset_id: adSetId,
             creative: { creative_id: creativeId },
-            status: "ACTIVE",
+            status: "PAUSED",
             multi_advertiser_ads_enabled: false,
-            url_tags: ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`
+            url_tags: (ad.customUrlParams !== undefined && ad.customUrlParams !== null && ad.customUrlParams !== "") 
+              ? ad.customUrlParams 
+              : `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`
           });
         }
       }
@@ -1075,6 +1329,71 @@ app.post("/api/process-asana", async (req, res) => {
     console.error(error);
     res.status(500).json({ error: error.message, logs: statusUpdates });
   }
+});
+
+// Manual video upload endpoint
+app.post("/api/upload-video", upload.single("video"), async (req, res) => {
+  const { clientId } = req.body;
+  const file = (req as any).file;
+
+  if (!file) return res.status(400).json({ error: "No video file provided." });
+  if (!clientId) return res.status(400).json({ error: "No client ID provided." });
+
+  const ext = path.extname(file.originalname) || ".mp4";
+  const newPath = `${file.path}${ext}`;
+  fs.renameSync(file.path, newPath);
+
+  try {
+    const client = db.prepare("SELECT * FROM clients WHERE id = ?").get(clientId) as any;
+    if (!client) throw new Error("Client not found.");
+
+    const metaService = new MetaAdsService(client, (msg) => console.log(msg));
+    const videoId = await metaService.uploadVideo(newPath, true);
+    
+    // Cleanup local file
+    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+    
+    res.json({ success: true, videoId });
+  } catch (error: any) {
+    console.error(error);
+    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual image upload endpoint
+app.post("/api/upload-image", upload.single("image"), async (req, res) => {
+  const { clientId } = req.body;
+  const file = (req as any).file;
+
+  if (!file) return res.status(400).json({ error: "No image file provided." });
+  if (!clientId) return res.status(400).json({ error: "No client ID provided." });
+
+  try {
+    const client = db.prepare("SELECT * FROM clients WHERE id = ?").get(clientId) as any;
+    if (!client) throw new Error("Client not found.");
+
+    const metaService = new MetaAdsService(client, (msg) => console.log(msg));
+    const imageHash = await metaService.uploadImage(file.path, true);
+    
+    // Cleanup local file
+    fs.unlinkSync(file.path);
+    
+    res.json({ success: true, imageHash });
+  } catch (error: any) {
+    console.error(error);
+    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Global error handler for multer and other middleware
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Global Error Handler:", err);
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  }
+  res.status(500).json({ error: err.message || "An unexpected error occurred on the server." });
 });
 
 // Vite middleware for development

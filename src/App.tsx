@@ -303,7 +303,7 @@ export default function App() {
               copy: '',
               url: '',
               thumbnail: '',
-              ctaType: 'BOOK_NOW', // Default objective is 'Sales'
+              ctaType: '', 
               customUrlParams: defaultUrlParams
             }
           ]
@@ -507,7 +507,7 @@ export default function App() {
                 thumbnail: data.thumbnail,
                 feedVideoUrl: data.feedVideoUrl,
                 verticalVideoUrl: data.verticalVideoUrl,
-                ctaType: (data.objective === 'Sales' || data.objective === 'CV') ? 'BOOK_NOW' : 'LEARN_MORE',
+                ctaType: '',
                 customUrlParams: defaultUrlParams
               }
             ]
@@ -530,6 +530,15 @@ export default function App() {
     if (missingBrand) {
       setError(`Please select a Brand/Account for Ad Set: "${missingBrand.name}"`);
       return;
+    }
+
+    // Validation: Ensure all ads have a CTA selected
+    for (const adSet of brief.adSets) {
+      const missingCTA = adSet.ads.find(ad => !ad.ctaType || ad.ctaType === '');
+      if (missingCTA) {
+        setError(`Please select a Call to Action for Ad: "${missingCTA.adName || missingCTA.headline || 'Untitled'}" in Ad Set: "${adSet.name}"`);
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -626,7 +635,7 @@ export default function App() {
       copy: '',
       url: '',
       thumbnail: '',
-      ctaType: (brief.objective === 'Sales' || brief.objective === 'CV') ? 'BOOK_NOW' : 'LEARN_MORE',
+      ctaType: '',
       customUrlParams: defaultUrlParams,
       carouselCards: type === 'carousel' ? [
         { id: Math.random().toString(36).substr(2, 9), imageUrl: '', headline: '', url: '' }
@@ -1186,10 +1195,11 @@ export default function App() {
                                     <div>
                                       <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-1 block">Call to Action</label>
                                       <select
-                                        className="w-full bg-white border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm appearance-none"
-                                        value={ad.ctaType || 'BOOK_NOW'}
+                                        className={`w-full border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm appearance-none transition-colors ${!ad.ctaType ? 'bg-red-50 ring-1 ring-red-200' : 'bg-white'}`}
+                                        value={ad.ctaType || ''}
                                         onChange={(e) => updateAd(adSet.id, ad.id, { ctaType: e.target.value })}
                                       >
+                                        <option value="">Select CTA...</option>
                                         <option value="BOOK_NOW">Book Now</option>
                                         <option value="LEARN_MORE">Learn More</option>
                                         <option value="SHOP_NOW">Shop Now</option>

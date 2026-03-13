@@ -533,7 +533,7 @@ class MetaAdsService {
   }
 
   async createCustomAudience(name: string, subtype: string = "CUSTOM", rule?: any) {
-    const body: any = { name, access_token: this.token };
+    const body: any = { name, subtype, access_token: this.token };
     if (subtype === "CUSTOM") body.customer_file_source = "USER_PROVIDED_ONLY";
     if (subtype === "WEBSITE") {
       if (!this.pixelId) throw new Error("Pixel ID is missing for WEBSITE custom audience.");
@@ -557,15 +557,31 @@ class MetaAdsService {
     return result.id;
   }
 
-  async addUsersToAudience(audienceId: string, hashedEmails: string[]) {
-    await fetch(`https://graph.facebook.com/v22.0/${audienceId}/users`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        payload: { schema: ["EMAIL"], data: hashedEmails },
-        access_token: this.token
-      })
-    });
+  async addUsersToAudience(audienceId: string, schema: string[], data: string[][]) {
+    const BATCH_SIZE = 5000;
+    const results = [];
+
+    for (let i = 0; i < data.length; i += BATCH_SIZE) {
+      const batch = data.slice(i, i + BATCH_SIZE);
+      this.addStatus(`Uploading batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} users)...`);
+      
+      const response = await fetch(`https://graph.facebook.com/v22.0/${audienceId}/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: { schema, data: batch },
+          access_token: this.token
+        })
+      });
+      
+      const result = await safeJson(response, `addUsersToAudience (Batch ${i})`);
+      if (result.error) {
+        throw new Error(`Add Users Error (Batch ${i}): ${result.error.message}`);
+      }
+      results.push(result);
+    }
+    
+    return results;
   }
 
   async getExistingCreative(adId: string) {
@@ -1065,15 +1081,61 @@ app.post("/api/process-asana", async (req, res) => {
       };
 
       // B: Custom Audience
-      if (adSet.csvData && adSet.csvName) {
-        addStatus(`Creating Custom Audience: ${adSet.csvName}...`);
+      let audienceName = adSet.csvName;
+      let adSetName = adSet.name;
+
+      if (client.name && client.name.includes("Palace Cinemas") && adSet.csvData) {
+        audienceName = `${movieName} Custom Audience.csv`;
+        adSetName = `Segment A - Custom Retargeting - ${movieName}`;
+      }
+
+      if (adSet.csvData && audienceName) {
+        addStatus(`Creating Custom Audience: ${audienceName}...`);
         try {
-          const customAudienceId = await metaService.createCustomAudience(adSet.csvName);
+          const customAudienceId = await metaService.createCustomAudience(audienceName);
           targeting.custom_audiences = [{ id: customAudienceId }];
           
-          const emails = adSet.csvData.split("\n").map((line: string) => line.trim()).filter((line: string) => line && line.includes("@"));
-          const hashedEmails = emails.map((email: string) => hashData(email));
-          await metaService.addUsersToAudience(customAudienceId, hashedEmails);
+          const records = parse(adSet.csvData, {
+            skip_empty_lines: true,
+            trim: true
+          });
+
+          const schema = ["EMAIL", "FN", "LN", "GEN"];
+          const data: string[][] = [];
+
+          for (let i = 0; i < records.length; i++) {
+            const row = records[i];
+            // Skip header if it looks like one
+            if (i === 0 && (String(row[0] || "").toLowerCase().includes("email") || String(row[1] || "").toLowerCase().includes("first"))) {
+              continue;
+            }
+
+            const email = String(row[0] || "").trim().toLowerCase();
+            const fn = String(row[1] || "").trim().toLowerCase();
+            const ln = String(row[2] || "").trim().toLowerCase();
+            let gen = String(row[4] || "").trim().toLowerCase();
+
+            // Normalize gender
+            if (gen.startsWith('m')) gen = 'm';
+            else if (gen.startsWith('f')) gen = 'f';
+            else gen = '';
+
+            if (email) {
+              data.push([
+                hashData(email),
+                fn ? hashData(fn) : "",
+                ln ? hashData(ln) : "",
+                gen ? hashData(gen) : ""
+              ]);
+            }
+          }
+
+          if (data.length > 0) {
+            await metaService.addUsersToAudience(customAudienceId, schema, data);
+            addStatus(`Successfully uploaded ${data.length} users to audience ${customAudienceId}`);
+          } else {
+            addStatus("Warning: No valid user data found in CSV.");
+          }
         } catch (e: any) {
           addStatus(`Audience creation failed: ${e.message}`);
         }
@@ -1086,7 +1148,7 @@ app.post("/api/process-asana", async (req, res) => {
 
       // D: Create Ad Set
       const adSetPayload: any = {
-        name: adSet.name,
+        name: adSetName,
         campaign_id: campaignId,
         billing_event: "IMPRESSIONS",
         optimization_goal: (objective === "Reach") ? "REACH" : (objective === "Traffic" ? "LINK_CLICKS" : "OFFSITE_CONVERSIONS"),

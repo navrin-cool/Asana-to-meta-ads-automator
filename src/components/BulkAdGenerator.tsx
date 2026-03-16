@@ -100,7 +100,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
         carouselCards: images.map((img, idx) => ({
           id: Math.random().toString(36).substr(2, 9),
           imageUrl: img,
-          headline: `Card ${idx + 1}`,
+          headline: adHeadline, // FIXED: Maps the user's inputted headline to the cards
           description: carouselDescription,
           url: globalUrl
         }))
@@ -108,12 +108,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
     }
 
     onGenerateAds(newAds);
-    
-    // Clear URL pools after generation to prevent accidental double-clicks
-    setFeedUrls('');
-    setVerticalUrls('');
-    setThumbnailUrls('');
-    setImageUrls('');
+    // Note: URL pools intentionally left populated so the user can generate more variations
   };
 
   const isGeneratingDisabled = !globalUrl || (mode === 'video' && !feedUrls.trim()) || (mode !== 'video' && !imageUrls.trim());
@@ -301,7 +296,18 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
         </div>
       </div>
 
-      <div className="flex justify-end pt-4 border-t border-[#5A5A40]/10">
+      <div className="flex justify-end gap-3 pt-4 border-t border-[#5A5A40]/10">
+        <button
+          onClick={() => {
+            setFeedUrls('');
+            setVerticalUrls('');
+            setThumbnailUrls('');
+            setImageUrls('');
+          }}
+          className="px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest text-[#5A5A40]/60 hover:bg-[#F5F5F0] hover:text-[#5A5A40] transition-colors"
+        >
+          Clear URLs
+        </button>
         <button
           onClick={handleGenerate}
           disabled={isGeneratingDisabled}

@@ -308,7 +308,15 @@ function InstagramSelect({ clientId, brandId, brands, value, onChange }: { clien
       setIsLoading(true);
       try {
         const res = await fetch(`/api/instagram-accounts?clientId=${clientId}&pageId=${selectedBrand.meta_page_id}`);
-        const data = await res.json();
+        
+        const contentType = res.headers.get('content-type');
+        let data;
+        if (contentType && contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(`Server returned non-JSON response (${res.status}). Details: ${text.substring(0, 100)}...`);
+        }
         
         if (!res.ok) {
           throw new Error(data.error || 'Failed to fetch Instagram accounts');
@@ -424,8 +432,13 @@ export default function App() {
   }, [isLaunching]);
 
   useEffect(() => {
-    fetch('/api/clients')
-      .then(res => res.json())
+    const fetchJson = (url: string) => fetch(url).then(res => {
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) return res.json();
+      throw new Error(`Server returned non-JSON response (${res.status})`);
+    });
+
+    fetchJson('/api/clients')
       .then(data => {
         setClients(data);
         if (data.length > 0) {
@@ -438,8 +451,7 @@ export default function App() {
       })
       .catch(err => console.error("Failed to load clients", err));
 
-    fetch('/api/locations')
-      .then(res => res.json())
+    fetchJson('/api/locations')
       .then(data => setAvailableLocations(data))
       .catch(err => console.error("Failed to load locations", err));
   }, []);

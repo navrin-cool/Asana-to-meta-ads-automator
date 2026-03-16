@@ -590,7 +590,7 @@ class MetaAdsService {
 
   async getExistingCreative(adId: string) {
     const response = await fetch(`https://graph.facebook.com/v22.0/${adId}?fields=creative&access_token=${this.token}`);
-    const data = await response.json() as any;
+    const data = await safeJson(response, "getExistingCreative");
     return data.creative?.id;
   }
 
@@ -726,7 +726,7 @@ app.get("/api/audiences", async (req, res) => {
     // Loop through Meta's pagination until there are no more pages
     while (nextUrl) {
       const response = await fetch(nextUrl);
-      const data = await response.json() as any;
+      const data = await safeJson(response, "audiences-pagination");
       
       if (data.error) throw new Error(data.error.message);
 
@@ -759,11 +759,11 @@ app.get("/api/search-targeting", async (req, res) => {
     const token = client.meta_access_token;
 
     // Fetch Interests (Query-based)
-    const interestsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adinterest&q=${encodeURIComponent(q)}&limit=50&access_token=${token}`).then(r => r.json());
+    const interestsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adinterest&q=${encodeURIComponent(q)}&limit=50&access_token=${token}`).then(r => safeJson(r, "search-interests"));
     
     // Fetch Behaviors & Demographics (Static lists, we fetch & filter locally)
-    const behaviorsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adTargetingCategory&class=behaviors&access_token=${token}`).then(r => r.json());
-    const demographicsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adTargetingCategory&class=demographics&access_token=${token}`).then(r => r.json());
+    const behaviorsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adTargetingCategory&class=behaviors&access_token=${token}`).then(r => safeJson(r, "search-behaviors"));
+    const demographicsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adTargetingCategory&class=demographics&access_token=${token}`).then(r => safeJson(r, "search-demographics"));
 
     const [interestsData, behaviorsData, demographicsData] = await Promise.all([interestsRes, behaviorsRes, demographicsRes]) as any[];
 
@@ -808,7 +808,7 @@ app.post("/api/fetch-brief", async (req, res) => {
     const asanaResponse = await fetch(`https://app.asana.com/api/1.0/tasks/${taskId}`, {
       headers: { Authorization: `Bearer ${ASANA_PAT}` }
     });
-    const asanaData = await asanaResponse.json() as any;
+    const asanaData = await safeJson(asanaResponse, "fetch-asana-task");
     if (!asanaData.data) throw new Error("Failed to fetch Asana task data.");
 
     const customFields = asanaData.data.custom_fields;
@@ -892,12 +892,12 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
 
     // 1. Fetch Campaign
     const campaignRes = await fetch(`https://graph.facebook.com/v22.0/${campaignId}?fields=name,objective,lifetime_budget,daily_budget,start_time,stop_time&access_token=${token}`);
-    const campaignData = await campaignRes.json() as any;
+    const campaignData = await safeJson(campaignRes, "fetch-campaign-data (campaign)");
     if (campaignData.error) throw new Error(`Meta Campaign Error: ${campaignData.error.message}`);
 
     // 2. Fetch Ad Sets
     const adSetsRes = await fetch(`https://graph.facebook.com/v22.0/${campaignId}/adsets?fields=id,name,targeting,start_time,end_time,lifetime_budget,daily_budget&access_token=${token}`);
-    const adSetsData = await adSetsRes.json() as any;
+    const adSetsData = await safeJson(adSetsRes, "fetch-campaign-data (adsets)");
     if (adSetsData.error) throw new Error(`Meta Ad Sets Error: ${adSetsData.error.message}`);
 
     const adSets: any[] = [];
@@ -905,7 +905,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
     // 3. Fetch Ads & Creatives
     for (const metaAdSet of adSetsData.data) {
       const adsRes = await fetch(`https://graph.facebook.com/v22.0/${metaAdSet.id}/ads?fields=id,name,creative{id,name,object_story_spec,effective_object_story_id,body,title,image_url,instagram_actor_id,video_id,object_url,asset_feed_spec},url_tags&access_token=${token}`);
-      const adsData = await adsRes.json() as any;
+      const adsData = await safeJson(adsRes, "fetch-campaign-data (ads)");
       if (adsData.error) throw new Error(`Meta Ads Error: ${adsData.error.message}`);
 
       const ads: any[] = [];
@@ -932,7 +932,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
         if (!storySpec && creative?.effective_object_story_id) {
           try {
             const storyRes = await fetch(`https://graph.facebook.com/v22.0/${creative.effective_object_story_id}?fields=object_story_spec,link,type,source&access_token=${token}`);
-            const storyData = await storyRes.json() as any;
+            const storyData = await safeJson(storyRes, "fetch-effective-story");
             if (storyData.object_story_spec) {
               storySpec = storyData.object_story_spec;
             }
@@ -1153,7 +1153,7 @@ app.post("/api/process-asana", async (req, res) => {
       if (adSet.copyTargetingFromAdSetId) {
         addStatus(`Copying targeting from Ad Set ID: ${adSet.copyTargetingFromAdSetId}...`);
         const copyResponse = await fetch(`https://graph.facebook.com/v22.0/${adSet.copyTargetingFromAdSetId}?fields=targeting&access_token=${creds.token}`);
-        const copyData = await copyResponse.json() as any;
+        const copyData = await safeJson(copyResponse, "copy-targeting");
         if (copyData.targeting) {
           targeting = { ...copyData.targeting, ...targeting };
         }
@@ -1396,6 +1396,10 @@ app.post("/api/process-asana", async (req, res) => {
             }
           }
 
+          if (!ad.url || ad.url.trim() === "") {
+            throw new Error(`Ad URL is missing for ad: ${ad.adName || ad.headline}. Please ensure the URL field is populated in Asana or the generator.`);
+          }
+
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
             url_tags: urlTags,
@@ -1404,7 +1408,7 @@ app.post("/api/process-asana", async (req, res) => {
               page_id: brand.meta_page_id,
               video_data: {
                 video_id: feedVideoId,
-                title: ad.headline,
+                title: ad.headline.substring(0, 255), // Meta limit
                 message: ad.copy,
                 call_to_action: { type: ctaType, value: { link: ad.url } }
               }
@@ -1429,15 +1433,29 @@ app.post("/api/process-asana", async (req, res) => {
           try {
             creativeId = await metaService.createCreative(creativePayload);
           } catch (e: any) {
-            if (e.message.includes("1885516") && verticalVideoId) {
-              addStatus("Warning: Vertical video customization failed with parameter error. Retrying without vertical video...");
-              delete creativePayload.asset_customization_rules;
-              creativeId = await metaService.createCreative(creativePayload);
+            if (e.message.includes("1885516")) {
+              if (verticalVideoId && creativePayload.asset_customization_rules) {
+                addStatus("Warning: Vertical video customization failed. Retrying without vertical video...");
+                delete creativePayload.asset_customization_rules;
+                creativeId = await metaService.createCreative(creativePayload);
+              } else if (ctaType !== "LEARN_MORE") {
+                addStatus(`Warning: Creative creation failed with CTA ${ctaType}. Retrying with LEARN_MORE...`);
+                // Update CTA in both places it might be
+                if (creativePayload.object_story_spec?.video_data?.call_to_action) {
+                  creativePayload.object_story_spec.video_data.call_to_action.type = "LEARN_MORE";
+                }
+                creativeId = await metaService.createCreative(creativePayload);
+              } else {
+                throw e;
+              }
             } else {
               throw e;
             }
           }
         } else if (!creativeId && ad.type === 'carousel') {
+          if (!ad.url || ad.url.trim() === "") {
+            throw new Error(`Ad URL is missing for carousel ad: ${ad.adName || ad.headline}. Please ensure the URL field is populated.`);
+          }
           const cards = (ad.carouselCards && ad.carouselCards.length > 0) 
             ? ad.carouselCards.map((c: any) => ({ ...c, imageUrl: getDownloadUrl(c.imageUrl) }))
             : [{ imageUrl: getDownloadUrl(ad.thumbnail || "https://picsum.photos/1080/1080"), headline: ad.headline, url: ad.url }];
@@ -1451,7 +1469,7 @@ app.post("/api/process-asana", async (req, res) => {
               link_data: {
                 link: ad.url,
                 message: ad.copy,
-                caption: ad.headline,
+                name: ad.headline.substring(0, 255),
                 child_attachments: await Promise.all(cards.map(async (card: any, idx: number) => {
                   let cardHash = null;
                   try {
@@ -1463,8 +1481,8 @@ app.post("/api/process-asana", async (req, res) => {
                   
                   const attachment: any = {
                     link: card.url || ad.url,
-                    name: card.headline || `${ad.headline} - ${idx + 1}`,
-                    description: ad.copy.substring(0, 30),
+                    name: (card.headline || `${ad.headline} - ${idx + 1}`).substring(0, 255),
+                    description: card.description || ad.copy.substring(0, 30),
                     call_to_action: { type: ctaType, value: { link: card.url || ad.url } }
                   };
                   if (cardHash) {
@@ -1478,8 +1496,25 @@ app.post("/api/process-asana", async (req, res) => {
             }
           };
 
-          creativeId = await metaService.createCreative(creativePayload);
+          try {
+            creativeId = await metaService.createCreative(creativePayload);
+          } catch (e: any) {
+            if (e.message.includes("1885516") && ctaType !== "LEARN_MORE") {
+              addStatus(`Warning: Carousel creation failed with CTA ${ctaType}. Retrying with LEARN_MORE...`);
+              if (creativePayload.object_story_spec?.link_data?.child_attachments) {
+                creativePayload.object_story_spec.link_data.child_attachments.forEach((att: any) => {
+                  if (att.call_to_action) att.call_to_action.type = "LEARN_MORE";
+                });
+              }
+              creativeId = await metaService.createCreative(creativePayload);
+            } else {
+              throw e;
+            }
+          }
         } else if (!creativeId && ad.type === 'image') {
+          if (!ad.url || ad.url.trim() === "") {
+            throw new Error(`Ad URL is missing for image ad: ${ad.adName || ad.headline}. Please ensure the URL field is populated.`);
+          }
           const imageUrl = getDownloadUrl(ad.thumbnail || "https://picsum.photos/1200/628");
           let imageHash = ad.manualThumbnailHash;
           if (!imageHash) {
@@ -1501,7 +1536,7 @@ app.post("/api/process-asana", async (req, res) => {
               link_data: {
                 link: ad.url,
                 message: ad.copy,
-                name: ad.headline,
+                name: ad.headline.substring(0, 255),
                 call_to_action: { type: ctaType, value: { link: ad.url } }
               }
             }
@@ -1513,7 +1548,19 @@ app.post("/api/process-asana", async (req, res) => {
             creativePayload.object_story_spec.link_data.image_url = imageUrl;
           }
 
-          creativeId = await metaService.createCreative(creativePayload);
+          try {
+            creativeId = await metaService.createCreative(creativePayload);
+          } catch (e: any) {
+            if (e.message.includes("1885516") && ctaType !== "LEARN_MORE") {
+              addStatus(`Warning: Image creation failed with CTA ${ctaType}. Retrying with LEARN_MORE...`);
+              if (creativePayload.object_story_spec?.link_data?.call_to_action) {
+                creativePayload.object_story_spec.link_data.call_to_action.type = "LEARN_MORE";
+              }
+              creativeId = await metaService.createCreative(creativePayload);
+            } else {
+              throw e;
+            }
+          }
         }
 
         if (creativeId) {

@@ -267,8 +267,12 @@ const safeJson = async (response: any, context: string) => {
   try {
     return JSON.parse(text);
   } catch (e) {
-    console.error(`JSON Parse Error in ${context}:`, text.substring(0, 500));
-    throw new Error(`Invalid JSON response from Meta (${context}). The server returned HTML instead of JSON. This often happens if the API endpoint is wrong or there's a proxy error. Response start: ${text.substring(0, 100)}...`);
+    console.error(`JSON Parse Error in ${context}:`, text.substring(0, 1000));
+    // Check if it's a known Meta error page or just a generic 500
+    if (text.includes("<!doctype html>") || text.includes("<html>")) {
+      throw new Error(`The Meta API returned an HTML error page instead of JSON during "${context}". This usually indicates a temporary Meta server issue or an invalid endpoint URL. Status: ${response.status}`);
+    }
+    throw new Error(`Invalid JSON response from Meta (${context}). Response start: ${text.substring(0, 100)}...`);
   }
 };
 
@@ -705,6 +709,89 @@ app.get("/api/locations", async (req, res) => {
   }
 });
 
+app.get("/api/audiences", async (req, res) => {
+  try {
+    const clientId = req.query.clientId as string;
+    if (!clientId) return res.json([]);
+
+    const client = db.prepare("SELECT * FROM clients WHERE id = ?").get(clientId) as any;
+    if (!client || !client.meta_access_token || !client.meta_ad_account_id) {
+      throw new Error("Client or Meta credentials not found");
+    }
+
+    let allAudiences: any[] = [];
+    // Start with a limit of 1000 per page to speed up the loop
+    let nextUrl: string | null = `https://graph.facebook.com/v22.0/${client.meta_ad_account_id}/customaudiences?fields=id,name&limit=1000&access_token=${client.meta_access_token}`;
+
+    // Loop through Meta's pagination until there are no more pages
+    while (nextUrl) {
+      const response = await fetch(nextUrl);
+      const data = await response.json() as any;
+      
+      if (data.error) throw new Error(data.error.message);
+
+      if (data.data && data.data.length > 0) {
+        allAudiences = allAudiences.concat(data.data);
+      }
+
+      // If Meta provides a 'next' link, set it for the next iteration. Otherwise, break the loop.
+      nextUrl = data.paging?.next || null;
+    }
+
+    res.json(allAudiences);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/search-targeting", async (req, res) => {
+  try {
+    const { clientId, q } = req.query;
+    if (!clientId || !q || typeof q !== 'string' || q.trim() === '') {
+      return res.json([]);
+    }
+
+    const client = db.prepare("SELECT meta_access_token FROM clients WHERE id = ?").get(clientId) as any;
+    if (!client || !client.meta_access_token) {
+      throw new Error("Client or Meta credentials not found");
+    }
+
+    const token = client.meta_access_token;
+
+    // Fetch Interests (Query-based)
+    const interestsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adinterest&q=${encodeURIComponent(q)}&limit=50&access_token=${token}`).then(r => r.json());
+    
+    // Fetch Behaviors & Demographics (Static lists, we fetch & filter locally)
+    const behaviorsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adTargetingCategory&class=behaviors&access_token=${token}`).then(r => r.json());
+    const demographicsRes = fetch(`https://graph.facebook.com/v22.0/search?type=adTargetingCategory&class=demographics&access_token=${token}`).then(r => r.json());
+
+    const [interestsData, behaviorsData, demographicsData] = await Promise.all([interestsRes, behaviorsRes, demographicsRes]) as any[];
+
+    let results: any[] = [];
+
+    // Map Interests
+    if (interestsData && interestsData.data) {
+      results = results.concat(interestsData.data.map((item: any) => ({ ...item, type: 'interests' })));
+    }
+
+    // Filter and Map Behaviors
+    if (behaviorsData && behaviorsData.data) {
+      const filteredBehaviors = behaviorsData.data.filter((item: any) => item.name.toLowerCase().includes(q.toLowerCase()));
+      results = results.concat(filteredBehaviors); 
+    }
+
+    // Filter and Map Demographics
+    if (demographicsData && demographicsData.data) {
+      const filteredDemographics = demographicsData.data.filter((item: any) => item.name.toLowerCase().includes(q.toLowerCase()));
+      results = results.concat(filteredDemographics);
+    }
+
+    res.json(results.slice(0, 50));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/fetch-brief", async (req, res) => {
   const { asanaUrl, csvData, csvName, clientId } = req.body;
   try {
@@ -780,6 +867,7 @@ app.post("/api/fetch-brief", async (req, res) => {
       locations: (getField("Locations") || "").split(",").map((l: string) => l.trim()).filter(Boolean),
       feedVideoUrl: getDownloadUrl(getField("Feed Video 1")),
       verticalVideoUrl: getDownloadUrl(getField("Vertical Video 1")),
+      asanaClient: asanaClient,
       csvData,
       csvName
     };
@@ -816,7 +904,7 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
 
     // 3. Fetch Ads & Creatives
     for (const metaAdSet of adSetsData.data) {
-      const adsRes = await fetch(`https://graph.facebook.com/v22.0/${metaAdSet.id}/ads?fields=id,name,creative{id,name,object_story_spec,effective_object_story_id,body,title,image_url,instagram_actor_id,video_id},url_tags&access_token=${token}`);
+      const adsRes = await fetch(`https://graph.facebook.com/v22.0/${metaAdSet.id}/ads?fields=id,name,creative{id,name,object_story_spec,effective_object_story_id,body,title,image_url,instagram_actor_id,video_id,object_url,asset_feed_spec},url_tags&access_token=${token}`);
       const adsData = await adsRes.json() as any;
       if (adsData.error) throw new Error(`Meta Ads Error: ${adsData.error.message}`);
 
@@ -908,6 +996,18 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
           if (creative?.title) headline = creative.title;
         }
 
+        // --- NEW: Ultimate URL Catch-all ---
+        // 1. Check object_url (catches Video, Image, and Carousel overarching URLs)
+        if (!url || url.trim() === "") {
+          url = creative?.object_url || "";
+        }
+        // 2. Check asset_feed_spec (catches Advantage+ Dynamic formats)
+        if (!url || url.trim() === "") {
+          if (creative?.asset_feed_spec?.link_urls && creative.asset_feed_spec.link_urls.length > 0) {
+            url = creative.asset_feed_spec.link_urls[0].website_url || "";
+          }
+        }
+
         ads.push({
           id: Math.random().toString(36).substr(2, 9),
           type,
@@ -924,19 +1024,30 @@ app.post("/api/fetch-campaign-data", async (req, res) => {
         });
       }
 
-      adSets.push({
-        id: Math.random().toString(36).substr(2, 9),
-        name: metaAdSet.name,
-        platformAccountId: detectedBrandId,
-        locations: [],
-        ageMin: metaAdSet.targeting?.age_min,
-        ageMax: metaAdSet.targeting?.age_max,
-        customAudiences: metaAdSet.targeting?.custom_audiences?.map((a: any) => a.id) || [],
-        excludedCustomAudiences: metaAdSet.targeting?.excluded_custom_audiences?.map((a: any) => a.id) || [],
-        geoLocations: metaAdSet.targeting?.geo_locations,
-        budget: parseFloat(metaAdSet.lifetime_budget || metaAdSet.daily_budget || "0") / 100,
-        ads
-      });
+        let importedTargeting: any[] = [];
+        const flexibleSpec = metaAdSet.targeting?.flexible_spec?.[0];
+        if (flexibleSpec) {
+          Object.keys(flexibleSpec).forEach(key => {
+             importedTargeting = importedTargeting.concat(
+               flexibleSpec[key].map((item: any) => ({ id: item.id, name: item.name, type: key }))
+             );
+          });
+        }
+
+        adSets.push({
+          id: Math.random().toString(36).substr(2, 9),
+          name: metaAdSet.name,
+          platformAccountId: detectedBrandId,
+          locations: [],
+          ageMin: metaAdSet.targeting?.age_min,
+          ageMax: metaAdSet.targeting?.age_max,
+          customAudiences: metaAdSet.targeting?.custom_audiences?.map((a: any) => ({ id: a.id, name: a.name })) || [],
+          excludedCustomAudiences: metaAdSet.targeting?.excluded_custom_audiences?.map((a: any) => ({ id: a.id, name: a.name })) || [],
+          geoLocations: metaAdSet.targeting?.geo_locations,
+          detailedTargeting: importedTargeting,
+          budget: parseFloat(metaAdSet.lifetime_budget || metaAdSet.daily_budget || "0") / 100,
+          ads
+        });
     }
 
     let displayObjective = "Sales";
@@ -1014,7 +1125,11 @@ app.post("/api/process-asana", async (req, res) => {
           exclusionRule
         );
       } catch (e: any) {
-        addStatus(`Exclusion audience creation failed: ${e.message}`);
+        let errorMsg = e.message;
+        if (errorMsg.includes("1870053")) {
+          errorMsg = "The Meta Ad Account has not accepted the Custom Audience Terms of Service. Please go to your Meta Ads Manager > Audiences, and accept the terms for this account.";
+        }
+        addStatus(`Exclusion audience creation failed: ${errorMsg}`);
       }
     }
 
@@ -1064,10 +1179,20 @@ app.post("/api/process-asana", async (req, res) => {
       if (adSet.ageMax) targeting.age_max = adSet.ageMax;
 
       if (adSet.customAudiences && adSet.customAudiences.length > 0) {
-        targeting.custom_audiences = adSet.customAudiences.map((id: string) => ({ id }));
+        targeting.custom_audiences = adSet.customAudiences.map((a: any) => ({ id: a.id }));
       }
       if (adSet.excludedCustomAudiences && adSet.excludedCustomAudiences.length > 0) {
-        targeting.excluded_custom_audiences = adSet.excludedCustomAudiences.map((id: string) => ({ id }));
+        targeting.excluded_custom_audiences = adSet.excludedCustomAudiences.map((a: any) => ({ id: a.id }));
+      }
+
+      if (adSet.detailedTargeting && adSet.detailedTargeting.length > 0) {
+        const spec: any = {};
+        for (const t of adSet.detailedTargeting) {
+          const category = t.type || 'interests';
+          if (!spec[category]) spec[category] = [];
+          spec[category].push({ id: t.id, name: t.name });
+        }
+        targeting.flexible_spec = [spec];
       }
 
       if (adSet.geoLocations) {
@@ -1201,7 +1326,12 @@ app.post("/api/process-asana", async (req, res) => {
           creativeId = await metaService.getExistingCreative(ad.manualAdId);
         }
 
-        const ctaType = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
+        let rawCta = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
+        // Map frontend 'BOOK_NOW' to the correct Meta API enum 'BOOK_TRAVEL'
+        const ctaType = rawCta === "BOOK_NOW" ? "BOOK_TRAVEL" : rawCta;
+        const urlTags = (ad.customUrlParams !== undefined && ad.customUrlParams !== null && ad.customUrlParams !== "") 
+          ? ad.customUrlParams 
+          : `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`;
 
         if (!creativeId && ad.type === 'video') {
           const feedUrl = getDownloadUrl(ad.feedVideoUrl);
@@ -1268,6 +1398,8 @@ app.post("/api/process-asana", async (req, res) => {
 
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
+            url_tags: urlTags,
+            contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
             object_story_spec: {
               page_id: brand.meta_page_id,
               video_data: {
@@ -1286,6 +1418,7 @@ app.post("/api/process-asana", async (req, res) => {
           }
 
           if (verticalVideoId) {
+            addStatus(`Adding vertical video customization (ID: ${verticalVideoId})...`);
             creativePayload.asset_customization_rules = [{
               customization_spec: { placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels"] },
               video_id: verticalVideoId,
@@ -1293,7 +1426,17 @@ app.post("/api/process-asana", async (req, res) => {
             }];
           }
 
-          creativeId = await metaService.createCreative(creativePayload);
+          try {
+            creativeId = await metaService.createCreative(creativePayload);
+          } catch (e: any) {
+            if (e.message.includes("1885516") && verticalVideoId) {
+              addStatus("Warning: Vertical video customization failed with parameter error. Retrying without vertical video...");
+              delete creativePayload.asset_customization_rules;
+              creativeId = await metaService.createCreative(creativePayload);
+            } else {
+              throw e;
+            }
+          }
         } else if (!creativeId && ad.type === 'carousel') {
           const cards = (ad.carouselCards && ad.carouselCards.length > 0) 
             ? ad.carouselCards.map((c: any) => ({ ...c, imageUrl: getDownloadUrl(c.imageUrl) }))
@@ -1301,6 +1444,8 @@ app.post("/api/process-asana", async (req, res) => {
           
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
+            url_tags: urlTags,
+            contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
             object_story_spec: {
               page_id: brand.meta_page_id,
               link_data: {
@@ -1349,6 +1494,8 @@ app.post("/api/process-asana", async (req, res) => {
 
           const creativePayload: any = {
             name: `Creative: ${ad.adName || ad.headline}`,
+            url_tags: urlTags,
+            contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
             object_story_spec: {
               page_id: brand.meta_page_id,
               link_data: {
@@ -1370,16 +1517,24 @@ app.post("/api/process-asana", async (req, res) => {
         }
 
         if (creativeId) {
-          await metaService.createAd({
+          const adPayload: any = {
             name: ad.adName || `Ad: ${ad.headline}`,
             adset_id: adSetId,
             creative: { creative_id: creativeId },
-            status: "PAUSED",
-            multi_advertiser_ads_enabled: false,
-            url_tags: (ad.customUrlParams !== undefined && ad.customUrlParams !== null && ad.customUrlParams !== "") 
-              ? ad.customUrlParams 
-              : `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`
-          });
+            status: "PAUSED"
+          };
+
+          // Explicitly attach the Client's Pixel to the Ad for tracking
+          if (creds.pixelId) {
+            adPayload.tracking_specs = [
+              {
+                "action.type": ["offsite_conversion"],
+                "fb_pixel": [String(creds.pixelId)]
+              }
+            ];
+          }
+
+          await metaService.createAd(adPayload);
         }
       }
     }

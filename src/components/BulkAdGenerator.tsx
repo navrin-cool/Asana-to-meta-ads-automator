@@ -23,6 +23,25 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
   const [thumbnailUrls, setThumbnailUrls] = useState('');
   const [imageUrls, setImageUrls] = useState('');
 
+  const handleUrlPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>, setter: (val: string) => void, currentVal: string) => {
+    const pastedText = e.clipboardData.getData('text');
+    if (pastedText.trim().startsWith('http')) {
+      e.preventDefault();
+      const target = e.target as HTMLTextAreaElement;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      
+      const textToInsert = pastedText.trim() + '\n';
+      const newValue = currentVal.substring(0, start) + textToInsert + currentVal.substring(end);
+      setter(newValue);
+      
+      // Set cursor position after insertion
+      setTimeout(() => {
+        target.selectionStart = target.selectionEnd = start + textToInsert.length;
+      }, 0);
+    }
+  };
+
   const handleGenerate = () => {
     const validCopies = copies.filter(c => c.trim() !== '');
     const fallbackCopy = validCopies.length > 0 ? validCopies[0] : '';
@@ -255,6 +274,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
                   className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 text-[10px] font-mono whitespace-pre min-h-[120px] focus:ring-2 focus:ring-[#5A5A40] outline-none"
                   value={feedUrls}
                   onChange={e => setFeedUrls(e.target.value)}
+                  onPaste={e => handleUrlPaste(e, setFeedUrls, feedUrls)}
                   placeholder="https://drive.google.com/..."
                 />
               </div>
@@ -264,6 +284,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
                   className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 text-[10px] font-mono whitespace-pre min-h-[100px] focus:ring-2 focus:ring-[#5A5A40] outline-none"
                   value={verticalUrls}
                   onChange={e => setVerticalUrls(e.target.value)}
+                  onPaste={e => handleUrlPaste(e, setVerticalUrls, verticalUrls)}
                   placeholder="https://drive.google.com/..."
                 />
               </div>
@@ -273,6 +294,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
                   className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 text-[10px] font-mono whitespace-pre min-h-[100px] focus:ring-2 focus:ring-[#5A5A40] outline-none"
                   value={thumbnailUrls}
                   onChange={e => setThumbnailUrls(e.target.value)}
+                  onPaste={e => handleUrlPaste(e, setThumbnailUrls, thumbnailUrls)}
                   placeholder="https://drive.google.com/..."
                 />
               </div>
@@ -284,6 +306,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
                 className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 text-[10px] font-mono whitespace-pre min-h-[260px] focus:ring-2 focus:ring-[#5A5A40] outline-none"
                 value={imageUrls}
                 onChange={e => setImageUrls(e.target.value)}
+                onPaste={e => handleUrlPaste(e, setImageUrls, imageUrls)}
                 placeholder="https://dropbox.com/..."
               />
               {mode === 'carousel' && (

@@ -614,7 +614,15 @@ app.get("/api/clients", (req, res) => {
     const clients = db.prepare("SELECT * FROM clients").all() as any[];
     const result = clients.map(client => {
       const brands = db.prepare("SELECT * FROM brands WHERE client_id = ?").all(client.id);
-      return { ...client, brands };
+      return { 
+        id: client.id,
+        name: client.name,
+        meta_ad_account_id: client.meta_ad_account_id,
+        meta_access_token: client.meta_access_token,
+        meta_pixel_id: client.meta_pixel_id,
+        asana_pat: client.asana_pat,
+        brands 
+      };
     });
     res.json(result);
   } catch (error: any) {

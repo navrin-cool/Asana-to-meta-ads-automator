@@ -476,7 +476,34 @@ class MetaAdsService {
       body: JSON.stringify({ ...payload, access_token: this.token })
     });
     const result = await safeJson(response, "createCreative");
-    if (result.error) throw new Error(`Creative Error: ${result.error.message}`);
+    
+    if (result.error) {
+      // --- FALLBACK LOGIC ---
+      // If the error is specifically about the instagram_actor_id, retry without it.
+      if (
+        (result.error.message.includes('instagram_actor_id') || result.error.code === 100) && 
+        payload.object_story_spec?.instagram_actor_id
+      ) {
+        this.addStatus(`Warning: Instagram ID invalid. Retrying creative creation using Facebook Page identity fallback...`);
+        
+        // Remove the invalid Instagram ID
+        delete payload.object_story_spec.instagram_actor_id;
+        
+        // Retry the API call
+        const retryResponse = await fetch(`https://graph.facebook.com/v22.0/${this.adAccountId}/adcreatives`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, access_token: this.token })
+        });
+        
+        const retryResult = await safeJson(retryResponse, "createCreative (retry)");
+        if (retryResult.error) throw new Error(`Creative Error after fallback retry: ${retryResult.error.message}`);
+        return retryResult.id;
+      }
+      // ----------------------
+
+      throw new Error(`Creative Error: ${result.error.message}`);
+    }
     return result.id;
   }
 

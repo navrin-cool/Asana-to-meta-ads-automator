@@ -664,6 +664,26 @@ app.get("/api/audiences", async (req, res) => {
   }
 });
 
+app.get("/api/instagram-accounts", async (req, res) => {
+  try {
+    const { clientId, pageId } = req.query;
+    if (!clientId || !pageId) return res.json([]);
+    
+    const client = db.prepare("SELECT meta_access_token FROM clients WHERE id = ?").get(clientId) as any;
+    if (!client) throw new Error("Client not found");
+
+    // Fetch Instagram accounts linked to the Meta Page
+    const response = await fetch(`https://graph.facebook.com/v22.0/${pageId}/instagram_accounts?fields=id,username&access_token=${client.meta_access_token}`);
+    const data = await safeJson(response, "instagram_accounts");
+    
+    if (data.error) throw new Error(data.error.message);
+    
+    res.json(data.data || []);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/search-targeting", async (req, res) => {
   try {
     const { clientId, q } = req.query;

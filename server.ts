@@ -122,7 +122,7 @@ const seedDatabase = () => {
   
   try {
     // 1. Seed Clients and Brands
-    const brandsCsvPath = path.join(__dirname, "data", "Automated Ads Setup Tool - Page_Profile IDs.csv");
+    const brandsCsvPath = path.join(process.cwd(), "data", "Automated Ads Setup Tool - Page_Profile IDs.csv");
     if (fs.existsSync(brandsCsvPath)) {
       const brandsContent = fs.readFileSync(brandsCsvPath, "utf-8");
       const brandsRecords = parse(brandsContent, {
@@ -188,10 +188,12 @@ const seedDatabase = () => {
         );
       }
       console.log("Brands seeded successfully.");
+    } else {
+      console.error("CRITICAL: Brands CSV not found at path:", brandsCsvPath);
     }
 
     // 2. Seed Locations
-    const locationsCsvPath = path.join(__dirname, "data", "Automated Ads Setup Tool - Locations.csv");
+    const locationsCsvPath = path.join(process.cwd(), "data", "Automated Ads Setup Tool - Locations.csv");
     if (fs.existsSync(locationsCsvPath)) {
       const locationsContent = fs.readFileSync(locationsCsvPath, "utf-8");
       const locationsRecords = parse(locationsContent, {
@@ -241,6 +243,8 @@ const seedDatabase = () => {
         }
       }
       console.log(`Locations seeded successfully. Total: ${seededCount}`);
+    } else {
+      console.error("CRITICAL: Locations CSV not found at path:", locationsCsvPath);
     }
   } catch (error) {
     console.error("Error seeding database:", error);

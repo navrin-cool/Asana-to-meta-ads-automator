@@ -19,8 +19,33 @@ const __dirname = path.dirname(__filename);
 const streamPipeline = promisify(pipeline);
 const upload = multer({ dest: os.tmpdir() });
 
+// Helper to convert Drive/Dropbox links to download links
+const getDownloadUrl = (url: string) => {
+  if (!url) return url;
+  let cleanUrl = url.trim();
+  
+  if (cleanUrl.includes("dropbox.com")) {
+    if (cleanUrl.includes("dl=0")) {
+      return cleanUrl.replace("dl=0", "dl=1");
+    } else if (!cleanUrl.includes("dl=1")) {
+      return cleanUrl.includes("?") ? `${cleanUrl}&dl=1` : `${cleanUrl}?dl=1`;
+    }
+    return cleanUrl;
+  }
+  
+  if (cleanUrl.includes("drive.google.com")) {
+    const match = cleanUrl.match(/\/d\/([^/]+)/) || cleanUrl.match(/id=([^&]+)/);
+    if (match) {
+      return `https://drive.google.com/uc?id=${match[1]}&export=download&confirm=t`;
+    }
+  }
+  
+  return cleanUrl;
+};
+
 // Helper to download a file from a URL to a temporary path
-const downloadFile = async (url: string): Promise<string> => {
+const downloadFile = async (rawUrl: string): Promise<string> => {
+  const url = getDownloadUrl(rawUrl);
   if (!url || !url.startsWith("http")) {
     throw new Error(`Invalid URL provided for download: "${url}"`);
   }
@@ -325,28 +350,6 @@ const safeJson = async (response: any, context: string) => {
 };
 
 // Helper to convert Drive/Dropbox links to download links
-const getDownloadUrl = (url: string) => {
-  if (!url) return url;
-  let cleanUrl = url.trim();
-  
-  if (cleanUrl.includes("dropbox.com")) {
-    if (cleanUrl.includes("dl=0")) {
-      return cleanUrl.replace("dl=0", "dl=1");
-    } else if (!cleanUrl.includes("dl=1")) {
-      return cleanUrl.includes("?") ? `${cleanUrl}&dl=1` : `${cleanUrl}?dl=1`;
-    }
-    return cleanUrl;
-  }
-  
-  if (cleanUrl.includes("drive.google.com")) {
-    const match = cleanUrl.match(/\/d\/([^/]+)/) || cleanUrl.match(/id=([^&]+)/);
-    if (match) {
-      return `https://drive.google.com/uc?id=${match[1]}&export=download&confirm=t`;
-    }
-  }
-  
-  return cleanUrl;
-};
 
 // Meta Ads Service
 class MetaAdsService {
@@ -1111,6 +1114,8 @@ app.post("/api/process-asana", async (req, res) => {
         let rawCta = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
         const ctaType = rawCta === "BOOK_NOW" ? "BOOK_TRAVEL" : rawCta;
         const urlTags = ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`;
+        const instagramActorId = adSet.instagramAccountId || brand.instagram_page_id || brand.meta_page_id;
+        const finalUrl = ad.url || "https://www.example.com";
 
         if (!creativeId && ad.type === 'video') {
           let feedVideoId = ad.manualFeedVideoId;
@@ -1126,11 +1131,13 @@ app.post("/api/process-asana", async (req, res) => {
             url_tags: urlTags,
             object_story_spec: {
               page_id: brand.meta_page_id,
+              instagram_actor_id: instagramActorId,
               video_data: {
                 video_id: feedVideoId,
+                image_url: getDownloadUrl(ad.thumbnail),
                 title: ad.headline.substring(0, 255),
                 message: ad.copy,
-                call_to_action: { type: ctaType, value: { link: ad.url } }
+                call_to_action: { type: ctaType, value: { link: finalUrl } }
               }
             }
           };
@@ -1144,12 +1151,42 @@ app.post("/api/process-asana", async (req, res) => {
             url_tags: urlTags,
             object_story_spec: {
               page_id: brand.meta_page_id,
+              instagram_actor_id: instagramActorId,
               link_data: {
-                link: ad.url,
+                link: finalUrl,
                 message: ad.copy,
                 name: ad.headline.substring(0, 255),
                 image_hash: imageHash,
-                call_to_action: { type: ctaType, value: { link: ad.url } }
+                call_to_action: { type: ctaType, value: { link: finalUrl } }
+              }
+            }
+          };
+          creativeId = await metaService.createCreative(creativePayload);
+        } else if (!creativeId && ad.type === 'carousel') {
+          const childAttachments: any[] = [];
+          if (ad.carouselCards && ad.carouselCards.length > 0) {
+            for (const card of ad.carouselCards) {
+              const imageHash = await metaService.uploadImage(getDownloadUrl(card.imageUrl));
+              childAttachments.push({
+                link: card.url || finalUrl,
+                image_hash: imageHash,
+                name: card.headline.substring(0, 255),
+                call_to_action: { type: ctaType, value: { link: card.url || finalUrl } }
+              });
+            }
+          }
+
+          const creativePayload: any = {
+            name: `Creative: ${ad.adName || ad.headline}`,
+            url_tags: urlTags,
+            object_story_spec: {
+              page_id: brand.meta_page_id,
+              instagram_actor_id: instagramActorId,
+              link_data: {
+                link: finalUrl,
+                message: ad.copy,
+                child_attachments: childAttachments,
+                call_to_action: { type: ctaType, value: { link: finalUrl } }
               }
             }
           };

@@ -572,7 +572,7 @@ export default function App() {
       const selectedClient = clients.find(c => c.id.toString() === brief.clientId);
       const autoBrandId = selectedClient?.brands?.length === 1 ? selectedClient.brands[0].id.toString() : '';
       const asanaClient = data.asanaClient || "";
-      const isPalace = asanaClient.includes("Palace Cinemas");
+      const isPalace = asanaClient.toLowerCase().includes("palace") || selectedClient?.name.toLowerCase().includes("palace");
       const isSales = data.objective === "Sales" || data.objective === "OBJECTIVE";
       const defaultCta = (isSales || isPalace) ? "BOOK_NOW" : "LEARN_MORE";
 
@@ -735,7 +735,7 @@ export default function App() {
     const defaultUrlParams = "utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}";
     const newId = Math.random().toString(36).substr(2, 9);
     const selectedClient = clients.find(c => c.id.toString() === brief.clientId);
-    const isPalace = selectedClient?.name.includes('Palace Cinemas');
+    const isPalace = selectedClient?.name.toLowerCase().includes('palace');
     const defaultCta = (brief.objective === 'Sales' || isPalace) ? 'BOOK_NOW' : 'LEARN_MORE';
     const newAd: Ad = {
       id: newId,
@@ -931,7 +931,7 @@ export default function App() {
                   const clientId = e.target.value;
                   const selectedClient = clients.find(c => c.id.toString() === clientId);
                   const autoBrandId = selectedClient?.brands?.length === 1 ? selectedClient.brands[0].id.toString() : '';
-                  const isPalace = selectedClient?.name.includes('Palace Cinemas');
+                  const isPalace = selectedClient?.name.toLowerCase().includes('palace');
                   const newDefaultCta = (brief.objective === 'Sales' || isPalace) ? 'BOOK_NOW' : 'LEARN_MORE';
                   
                   setBrief(prev => ({ 
@@ -1188,7 +1188,7 @@ export default function App() {
                             value={brief.objective || ''}
                           onChange={(e) => {
                             const newObjective = e.target.value;
-                            const isPalace = clients.find(c => c.id.toString() === brief.clientId)?.name.includes('Palace Cinemas');
+                            const isPalace = clients.find(c => c.id.toString() === brief.clientId)?.name.toLowerCase().includes('palace');
                             const newDefaultCta = (newObjective === 'Sales' || isPalace) ? 'BOOK_NOW' : 'LEARN_MORE';
                             const oldDefaultCta = (brief.objective === 'Sales' || isPalace) ? 'BOOK_NOW' : 'LEARN_MORE';
                             

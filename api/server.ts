@@ -1114,7 +1114,6 @@ app.post("/api/process-asana", async (req, res) => {
         let rawCta = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
         const ctaType = rawCta === "BOOK_NOW" ? "BOOK_TRAVEL" : rawCta;
         const urlTags = ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`;
-        const instagramActorId = adSet.instagramAccountId || brand.instagram_page_id || brand.meta_page_id;
         const finalUrl = ad.url || "https://www.example.com";
 
         if (!creativeId && ad.type === 'video') {
@@ -1131,7 +1130,6 @@ app.post("/api/process-asana", async (req, res) => {
             url_tags: urlTags,
             object_story_spec: {
               page_id: brand.meta_page_id,
-              instagram_actor_id: instagramActorId,
               video_data: {
                 video_id: feedVideoId,
                 image_url: getDownloadUrl(ad.thumbnail),
@@ -1141,6 +1139,13 @@ app.post("/api/process-asana", async (req, res) => {
               }
             }
           };
+
+          if (adSet.instagramAccountId) {
+            creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
+          } else if (brand.instagram_page_id) {
+            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+          }
+
           creativeId = await metaService.createCreative(creativePayload);
         } else if (!creativeId && ad.type === 'image') {
           let imageHash = ad.manualThumbnailHash;
@@ -1151,7 +1156,6 @@ app.post("/api/process-asana", async (req, res) => {
             url_tags: urlTags,
             object_story_spec: {
               page_id: brand.meta_page_id,
-              instagram_actor_id: instagramActorId,
               link_data: {
                 link: finalUrl,
                 message: ad.copy,
@@ -1161,6 +1165,13 @@ app.post("/api/process-asana", async (req, res) => {
               }
             }
           };
+
+          if (adSet.instagramAccountId) {
+            creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
+          } else if (brand.instagram_page_id) {
+            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+          }
+
           creativeId = await metaService.createCreative(creativePayload);
         } else if (!creativeId && ad.type === 'carousel') {
           const childAttachments: any[] = [];
@@ -1181,7 +1192,6 @@ app.post("/api/process-asana", async (req, res) => {
             url_tags: urlTags,
             object_story_spec: {
               page_id: brand.meta_page_id,
-              instagram_actor_id: instagramActorId,
               link_data: {
                 link: finalUrl,
                 message: ad.copy,
@@ -1190,6 +1200,13 @@ app.post("/api/process-asana", async (req, res) => {
               }
             }
           };
+
+          if (adSet.instagramAccountId) {
+            creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
+          } else if (brand.instagram_page_id) {
+            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+          }
+
           creativeId = await metaService.createCreative(creativePayload);
         }
 

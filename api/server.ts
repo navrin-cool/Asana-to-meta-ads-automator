@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import crypto from "crypto";
@@ -1217,6 +1216,7 @@ if (!process.env.VERCEL) {
     
     // Vite middleware for development (Google AI Studio)
     if (process.env.NODE_ENV !== "production") {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",

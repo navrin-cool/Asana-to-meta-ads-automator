@@ -12,6 +12,10 @@ import { promisify } from "util";
 import multer from "multer";
 import FormData from "form-data";
 import { parse } from "csv-parse/sync";
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const streamPipeline = promisify(pipeline);
 const upload = multer({ dest: os.tmpdir() });
@@ -118,7 +122,7 @@ const seedDatabase = () => {
   
   try {
     // 1. Seed Clients and Brands
-    const brandsCsvPath = path.join(process.cwd(), "data", "Automated Ads Setup Tool - Page_Profile IDs.csv");
+    const brandsCsvPath = path.join(__dirname, "data", "Automated Ads Setup Tool - Page_Profile IDs.csv");
     if (fs.existsSync(brandsCsvPath)) {
       const brandsContent = fs.readFileSync(brandsCsvPath, "utf-8");
       const brandsRecords = parse(brandsContent, {
@@ -187,7 +191,7 @@ const seedDatabase = () => {
     }
 
     // 2. Seed Locations
-    const locationsCsvPath = path.join(process.cwd(), "data", "Automated Ads Setup Tool - Locations.csv");
+    const locationsCsvPath = path.join(__dirname, "data", "Automated Ads Setup Tool - Locations.csv");
     if (fs.existsSync(locationsCsvPath)) {
       const locationsContent = fs.readFileSync(locationsCsvPath, "utf-8");
       const locationsRecords = parse(locationsContent, {
@@ -1178,5 +1182,17 @@ if (!process.env.VERCEL) {
   };
   startServer();
 }
+
+app.get("/api/debug", (req, res) => {
+  const dataPath = path.join(__dirname, "data");
+  res.json({
+    cwd: process.cwd(),
+    dirname: __dirname,
+    dataPath: dataPath,
+    dataExists: fs.existsSync(dataPath),
+    files: fs.existsSync(dataPath) ? fs.readdirSync(dataPath) : [],
+    dbExists: fs.existsSync(dbPath)
+  });
+});
 
 export default app;

@@ -362,7 +362,8 @@ class MetaAdsService {
     this.token = String(creds.meta_access_token || "").trim();
     this.adAccountId = String(creds.meta_ad_account_id || "").trim();
     this.pixelId = String(creds.meta_pixel_id || "").trim();
-    if (this.pixelId && !/^\\d+$/.test(this.pixelId)) {
+    // Fixed Regex: removed the double backslash so it checks for digits
+    if (this.pixelId && !/^\d+$/.test(this.pixelId)) {
       this.pixelId = ""; 
     }
     this.addStatus = addStatus;

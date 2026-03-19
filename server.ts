@@ -116,136 +116,186 @@ db.exec(`
   );
 `);
 
+// Hardcoded Data for Seeding
+const brandsData = [
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","META_PAGE_ID":"947415075356990","INSTAGRAM_PAGE_ID":"17841400293047168","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_1980661575743458","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"627590211536590","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Classic Cinemas","META_PAGE_ID":"126864948822","INSTAGRAM_PAGE_ID":"17841400405604429","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_440729647365943","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"213848060612075","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Lido Cinemas","META_PAGE_ID":"711293905547605","INSTAGRAM_PAGE_ID":"17841400216501946","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_440729647365943","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"213848060612075","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Cameo Cinemas","META_PAGE_ID":"180938768076","INSTAGRAM_PAGE_ID":"17841400799340091","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_440729647365943","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"213848060612075","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Ritz Cinemas","META_PAGE_ID":"103726829691577","INSTAGRAM_PAGE_ID":"17841401032673150","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_440729647365943","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"213848060612075","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","META_PAGE_ID":"156886911053167","INSTAGRAM_PAGE_ID":"17841400843124769","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_1378797462367397","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"567384272786736","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","META_PAGE_ID":"394081097321259","INSTAGRAM_PAGE_ID":"17841402245508157","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_1378797462367397","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"567384272786736","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"State Cinema","META_PAGE_ID":"156883271006621","INSTAGRAM_PAGE_ID":"17841402322159893","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_1378797462367397","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"567384272786736","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Angelika Cinemas","META_PAGE_ID":"102997555940666","INSTAGRAM_PAGE_ID":"17841460256114682","TIKTOK_PAGE_ID":"","META_AD_ACCOUNT_ID":"act_1378797462367397","TIKTOK_AD_ACCOUNT_ID":"","META_PIXEL_ID":"567384272786736","TIKTOK_PIXEL_ID":"","META_ACCESS_TOKEN":"EAALL40C26hcBQ9SRU1q1NFZBnR1A5akfhaN29Bcm48ZCX0eSZC3LvZAJovXR6ZAq1JmKZBhamMUs26reoxksdTHkgCHO5frDPmCyfnICG0hBkF7P7riSmg3inT9fcT7jeWh6LvOO6i2s2lGAxixW3feandtjXmDSKdsfjGY3fp7X3bIPgpW9OPvjm4uklZCbfzV1gZDZD","TIKTOK_ACCESS_TOKEN":"","ASANA_PAT":"2/1200558601745523/1213331235166555:e24c248f8d16a5c3dc313a93983169b8"}
+];
+
+const locationsData = [
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Balwyn","Latitude":"-37.8123","Longitude":"145.0784","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8123,\"longitude\":145.0784,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"The Astor","Latitude":"-37.8584","Longitude":"144.9928","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8584,\"longitude\":144.9928,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Brighton Bay","Latitude":"-37.8997","Longitude":"144.9996","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8997,\"longitude\":144.9996,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Cinema Como","Latitude":"-37.8398","Longitude":"144.9942","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8398,\"longitude\":144.9942,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Kino Cinema","Latitude":"-37.814","Longitude":"144.9723","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.814,\"longitude\":144.9723,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Westgarth","Latitude":"-37.7812","Longitude":"144.9959","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.7812,\"longitude\":144.9959,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Pentridge Cinema","Latitude":"-37.7479","Longitude":"144.9702","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.7479,\"longitude\":144.9702,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Penny Lane","Latitude":"-37.7663","Longitude":"144.9248","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.7663,\"longitude\":144.9248,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Norton Street","Latitude":"-33.8824","Longitude":"151.1565","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.8824,\"longitude\":151.1565,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Central","Latitude":"-33.8841","Longitude":"151.2007","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.8841,\"longitude\":151.2007,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Moore Park","Latitude":"-33.8943","Longitude":"151.2238","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.8943,\"longitude\":151.2238,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Ballina Fair","Latitude":"-28.8601","Longitude":"153.5497","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-28.8601,\"longitude\":153.5497,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace James St","Latitude":"-27.4586","Longitude":"153.0401","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-27.4586,\"longitude\":153.0401,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Barracks","Latitude":"-27.4661","Longitude":"153.0152","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-27.4661,\"longitude\":153.0152,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Byron Bay","Latitude":"-28.6441","Longitude":"153.612","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-28.6441,\"longitude\":153.612,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Electric","Latitude":"-35.2852","Longitude":"149.1241","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-35.2852,\"longitude\":149.1241,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Raine Square","Latitude":"-31.9519","Longitude":"115.8562","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-31.9519,\"longitude\":115.8562,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Regent Ballarat","Latitude":"-37.5615","Longitude":"143.8587","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.5615,\"longitude\":143.8587,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Palace Cinemas","BRAND_NAME":"Palace Cinemas","Cinema Name":"Palace Church St","Latitude":"-37.9155","Longitude":"144.9921","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.9155,\"longitude\":144.9921,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Lido Cinemas","Cinema Name":"Lido Cinemas","Latitude":"-37.8208","Longitude":"145.0358","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8208,\"longitude\":145.0358,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Classic Cinemas","Cinema Name":"Classic Cinemas","Latitude":"-37.8858","Longitude":"145.0005","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8858,\"longitude\":145.0005,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Ritz Cinemas","Cinema Name":"Ritz Cinemas","Latitude":"-33.9201","Longitude":"151.2435","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.9201,\"longitude\":151.2435,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Moving Story","BRAND_NAME":"Cameo Cinemas","Cinema Name":"Cameo Cinemas","Latitude":"-37.9095","Longitude":"145.3521","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.9095,\"longitude\":145.3521,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"State Cinema","Cinema Name":"State Cinema","Latitude":"-42.8724","Longitude":"147.3147","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-42.8724,\"longitude\":147.3147,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Angelika Cinemas","Cinema Name":"Angelika Film Centre","Latitude":"-27.4913","Longitude":"153.0368","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-27.4913,\"longitude\":153.0368,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Armadale","Latitude":"-32.1472","Longitude":"116.0152","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-32.1472,\"longitude\":116.0152,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Belmont","Latitude":"-31.9442","Longitude":"115.9324","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-31.9442,\"longitude\":115.9324,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Busselton","Latitude":"-33.6534","Longitude":"115.3444","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.6534,\"longitude\":115.3444,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Mandurah","Latitude":"-32.5269","Longitude":"115.717","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-32.5269,\"longitude\":115.717,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Auburn","Latitude":"-33.8504","Longitude":"151.0335","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.8504,\"longitude\":151.0335,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Charlestown","Latitude":"-32.9663","Longitude":"151.7101","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-32.9663,\"longitude\":151.7101,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Dubbo","Latitude":"-32.2474","Longitude":"148.6012","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-32.2474,\"longitude\":148.6012,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Maitland","Latitude":"-32.7348","Longitude":"151.5542","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-32.7348,\"longitude\":151.5542,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Rhodes","Latitude":"-33.8336","Longitude":"151.0858","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.8336,\"longitude\":151.0858,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Rouse Hill","Latitude":"-33.6811","Longitude":"150.9231","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-33.6811,\"longitude\":150.9231,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Bundaberg","Latitude":"-24.8741","Longitude":"152.3243","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-24.8741,\"longitude\":152.3243,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Harbour Town","Latitude":"-27.9315","Longitude":"153.3768","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-27.9315,\"longitude\":153.3768,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Jindalee","Latitude":"-27.5385","Longitude":"152.9361","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-27.5385,\"longitude\":152.9361,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Newmarket","Latitude":"-27.4411","Longitude":"153.0035","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-27.4411,\"longitude\":153.0035,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Townsville","Latitude":"-19.3134","Longitude":"146.7264","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-19.3134,\"longitude\":146.7264,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Burwood Brickworks","Latitude":"-37.8511","Longitude":"145.1436","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8511,\"longitude\":145.1436,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Chirnside Park","Latitude":"-37.7533","Longitude":"145.3094","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.7533,\"longitude\":145.3094,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Dandenong","Latitude":"-37.9882","Longitude":"145.2135","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.9882,\"longitude\":145.2135,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Epping","Latitude":"-37.6495","Longitude":"145.0256","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.6495,\"longitude\":145.0256,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Melton","Latitude":"-37.6912","Longitude":"144.5901","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.6912,\"longitude\":144.5901,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Millers Junction","Latitude":"-37.8344","Longitude":"144.8512","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.8344,\"longitude\":144.8512,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Sunbury","Latitude":"-37.5813","Longitude":"144.7291","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-37.5813,\"longitude\":144.7291,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Traralgon","Latitude":"-38.1961","Longitude":"146.5401","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-38.1961,\"longitude\":146.5401,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Waurn Ponds","Latitude":"-38.2012","Longitude":"144.3123","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-38.2012,\"longitude\":144.3123,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Devonport","Latitude":"-41.1782","Longitude":"146.3614","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-41.1782,\"longitude\":146.3614,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas Elizabeth","Latitude":"-34.7214","Longitude":"138.6712","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-34.7214,\"longitude\":138.6712,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - Australia","Cinema Name":"Reading Cinemas West Lakes","Latitude":"-34.8845","Longitude":"138.4894","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-34.8845,\"longitude\":138.4894,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas Dunedin","Latitude":"-45.8758","Longitude":"170.5032","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-45.8758,\"longitude\":170.5032,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas Invercargill","Latitude":"-46.4131","Longitude":"168.3538","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-46.4131,\"longitude\":168.3538,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas LynnMall","Latitude":"-36.9114","Longitude":"174.6841","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-36.9114,\"longitude\":174.6841,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas Napier","Latitude":"-39.4921","Longitude":"176.9145","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-39.4921,\"longitude\":176.9145,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas Porirua","Latitude":"-41.1415","Longitude":"174.8424","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-41.1415,\"longitude\":174.8424,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas Rotorua","Latitude":"-38.1368","Longitude":"176.2511","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-38.1368,\"longitude\":176.2511,\"radius\":16,\"distance_unit\":\"kilometer\"}"},
+  {"CLIENT_NAME":"Reading Cinemas","BRAND_NAME":"Reading Cinemas - New Zealand","Cinema Name":"Reading Cinemas The Palms","Latitude":"-43.5112","Longitude":"172.6745","Radius":"16","Distance Unit":"kilometer","JSON Snippet":"{\"latitude\":-43.5112,\"longitude\":172.6745,\"radius\":16,\"distance_unit\":\"kilometer\"}"}
+];
+
 // Seeding Function
 const seedDatabase = () => {
-  console.log("Seeding database from CSV files...");
+  console.log("Seeding database from hardcoded data...");
   
   try {
     // 1. Seed Clients and Brands
-    const brandsCsvPath = path.join(process.cwd(), "data", "Automated Ads Setup Tool - Page_Profile IDs.csv");
-    if (fs.existsSync(brandsCsvPath)) {
-      const brandsContent = fs.readFileSync(brandsCsvPath, "utf-8");
-      const brandsRecords = parse(brandsContent, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true
-      });
+    for (const record of brandsData) {
+      // Insert/Update Client
+      const clientName = record.CLIENT_NAME;
+      if (!clientName) continue;
 
-      for (const record of brandsRecords as any[]) {
-        // Insert/Update Client
-        const clientName = record.CLIENT_NAME;
-        if (!clientName) continue;
-
-        // CRITICAL FIX: Meta Ad Account ID formatting
-        let metaAdAccountId = record.META_AD_ACCOUNT_ID;
-        if (metaAdAccountId && metaAdAccountId.startsWith("act=")) {
-          metaAdAccountId = metaAdAccountId.replace("=", "_");
-        } else if (metaAdAccountId && !metaAdAccountId.startsWith("act_")) {
-          metaAdAccountId = `act_${metaAdAccountId}`;
-        }
-
-        db.prepare(`
-          INSERT INTO clients (name, meta_ad_account_id, meta_access_token, meta_pixel_id, asana_pat)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(name) DO UPDATE SET
-            meta_ad_account_id = excluded.meta_ad_account_id,
-            meta_access_token = excluded.meta_access_token,
-            meta_pixel_id = excluded.meta_pixel_id,
-            asana_pat = excluded.asana_pat
-        `).run(
-          clientName,
-          metaAdAccountId,
-          record.META_ACCESS_TOKEN,
-          record.META_PIXEL_ID,
-          record.ASANA_PAT
-        );
-
-        const client = db.prepare("SELECT id FROM clients WHERE name = ?").get(clientName) as any;
-        const clientId = client.id;
-
-        // Insert/Replace Brand
-        db.prepare(`
-          INSERT INTO brands (
-            client_id, brand_name, meta_page_id, instagram_page_id, tiktok_page_id,
-            tiktok_ad_account_id, tiktok_pixel_id, tiktok_access_token
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(client_id, brand_name) DO UPDATE SET
-            meta_page_id = excluded.meta_page_id,
-            instagram_page_id = excluded.instagram_page_id,
-            tiktok_page_id = excluded.tiktok_page_id,
-            tiktok_ad_account_id = excluded.tiktok_ad_account_id,
-            tiktok_pixel_id = excluded.tiktok_pixel_id,
-            tiktok_access_token = excluded.tiktok_access_token
-        `).run(
-          clientId,
-          record.BRAND_NAME,
-          record.META_PAGE_ID,
-          record.INSTAGRAM_PAGE_ID,
-          record.TIKTOK_PAGE_ID,
-          record.TIKTOK_AD_ACCOUNT_ID,
-          record.TIKTOK_PIXEL_ID,
-          record.TIKTOK_ACCESS_TOKEN
-        );
+      // CRITICAL FIX: Meta Ad Account ID formatting
+      let metaAdAccountId = record.META_AD_ACCOUNT_ID;
+      if (metaAdAccountId && metaAdAccountId.startsWith("act=")) {
+        metaAdAccountId = metaAdAccountId.replace("=", "_");
+      } else if (metaAdAccountId && !metaAdAccountId.startsWith("act_")) {
+        metaAdAccountId = `act_${metaAdAccountId}`;
       }
-      console.log("Brands seeded successfully.");
-    } else {
-      console.error("CRITICAL: Brands CSV not found at path:", brandsCsvPath);
+
+      db.prepare(`
+        INSERT INTO clients (name, meta_ad_account_id, meta_access_token, meta_pixel_id, asana_pat)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+          meta_ad_account_id = excluded.meta_ad_account_id,
+          meta_access_token = excluded.meta_access_token,
+          meta_pixel_id = excluded.meta_pixel_id,
+          asana_pat = excluded.asana_pat
+      `).run(
+        clientName,
+        metaAdAccountId,
+        record.META_ACCESS_TOKEN,
+        record.META_PIXEL_ID,
+        record.ASANA_PAT
+      );
+
+      const client = db.prepare("SELECT id FROM clients WHERE name = ?").get(clientName) as any;
+      const clientId = client.id;
+
+      // Insert/Replace Brand
+      db.prepare(`
+        INSERT INTO brands (
+          client_id, brand_name, meta_page_id, instagram_page_id, tiktok_page_id,
+          tiktok_ad_account_id, tiktok_pixel_id, tiktok_access_token
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(client_id, brand_name) DO UPDATE SET
+          meta_page_id = excluded.meta_page_id,
+          instagram_page_id = excluded.instagram_page_id,
+          tiktok_page_id = excluded.tiktok_page_id,
+          tiktok_ad_account_id = excluded.tiktok_ad_account_id,
+          tiktok_pixel_id = excluded.tiktok_pixel_id,
+          tiktok_access_token = excluded.tiktok_access_token
+      `).run(
+        clientId,
+        record.BRAND_NAME,
+        record.META_PAGE_ID,
+        record.INSTAGRAM_PAGE_ID,
+        record.TIKTOK_PAGE_ID,
+        record.TIKTOK_AD_ACCOUNT_ID,
+        record.TIKTOK_PIXEL_ID,
+        record.TIKTOK_ACCESS_TOKEN
+      );
     }
+    console.log("Brands seeded successfully.");
 
     // 2. Seed Locations
-    const locationsCsvPath = path.join(process.cwd(), "data", "Automated Ads Setup Tool - Locations.csv");
-    if (fs.existsSync(locationsCsvPath)) {
-      const locationsContent = fs.readFileSync(locationsCsvPath, "utf-8");
-      const locationsRecords = parse(locationsContent, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        bom: true
-      });
+    console.log(`Found ${locationsData.length} location records.`);
+    
+    let seededCount = 0;
+    for (const record of locationsData) {
+      const clientName = record.CLIENT_NAME;
+      const brandName = record.BRAND_NAME;
+      if (!clientName || !brandName) continue;
 
-      console.log(`Found ${locationsRecords.length} location records in CSV.`);
+      const client = db.prepare("SELECT id FROM clients WHERE name = ?").get(clientName) as any;
+      if (!client) continue;
       
-      let seededCount = 0;
-      for (const record of locationsRecords as any[]) {
-        const clientName = record.CLIENT_NAME;
-        const brandName = record.BRAND_NAME;
-        if (!clientName || !brandName) continue;
+      const brand = db.prepare("SELECT id FROM brands WHERE client_id = ? AND brand_name = ?").get(client.id, brandName) as any;
+      if (!brand) continue;
 
-        const client = db.prepare("SELECT id FROM clients WHERE name = ?").get(clientName) as any;
-        if (!client) continue;
-        
-        const brand = db.prepare("SELECT id FROM brands WHERE client_id = ? AND brand_name = ?").get(client.id, brandName) as any;
-        if (!brand) continue;
-
-        try {
-          db.prepare(`
-            INSERT INTO locations (
-              brand_id, cinema_name, latitude, longitude, radius, distance_unit, json_snippet
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(brand_id, cinema_name) DO UPDATE SET
-              latitude = excluded.latitude,
-              longitude = excluded.longitude,
-              radius = excluded.radius,
-              distance_unit = excluded.distance_unit,
-              json_snippet = excluded.json_snippet
-          `).run(
-            brand.id,
-            record["Cinema Name"],
-            parseFloat(record.Latitude),
-            parseFloat(record.Longitude),
-            parseInt(record.Radius),
-            record["Distance Unit"],
-            record["JSON Snippet"]
-          );
-          seededCount++;
-        } catch (e: any) {
-          console.error(`Failed to insert location ${record["Cinema Name"]}:`, e.message);
-        }
+      try {
+        db.prepare(`
+          INSERT INTO locations (
+            brand_id, cinema_name, latitude, longitude, radius, distance_unit, json_snippet
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(brand_id, cinema_name) DO UPDATE SET
+            latitude = excluded.latitude,
+            longitude = excluded.longitude,
+            radius = excluded.radius,
+            distance_unit = excluded.distance_unit,
+            json_snippet = excluded.json_snippet
+        `).run(
+          brand.id,
+          record["Cinema Name"],
+          parseFloat(record.Latitude),
+          parseFloat(record.Longitude),
+          parseInt(record.Radius),
+          record["Distance Unit"],
+          record["JSON Snippet"]
+        );
+        seededCount++;
+      } catch (e: any) {
+        console.error(`Failed to insert location ${record["Cinema Name"]}:`, e.message);
       }
-      console.log(`Locations seeded successfully. Total: ${seededCount}`);
-    } else {
-      console.error("CRITICAL: Locations CSV not found at path:", locationsCsvPath);
     }
+    console.log(`Locations seeded successfully. Total: ${seededCount}`);
   } catch (error) {
     console.error("Error seeding database:", error);
   }

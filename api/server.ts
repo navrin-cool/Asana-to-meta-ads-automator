@@ -1151,7 +1151,7 @@ app.post("/api/process-asana", async (req, res) => {
         adSetPayload.attribution_spec = [
           { event_type: "CLICK_THROUGH", window_days: 7 },
           { event_type: "VIEW_THROUGH", window_days: 1 },
-          { event_type: "ENGAGED_VIEW", window_days: 1 }
+          { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 }
         ];
       } else if (objective === "Reach") {
         adSetPayload.promoted_object = { page_id: String(brand.meta_page_id) };

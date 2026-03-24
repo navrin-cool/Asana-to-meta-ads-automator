@@ -14,6 +14,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
   const [globalCta, setGlobalCta] = useState('BOOK_NOW');
   const [adNamePrefix, setAdNamePrefix] = useState('');
   const [carouselDescription, setCarouselDescription] = useState('');
+  const [carouselCardHeadline, setCarouselCardHeadline] = useState('');
   const [copies, setCopies] = useState<string[]>(['']);
   const [headlines, setHeadlines] = useState<string[]>(['']);
   
@@ -119,7 +120,7 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
         carouselCards: images.map((img, idx) => ({
           id: Math.random().toString(36).substr(2, 9),
           imageUrl: img,
-          headline: adHeadline, // FIXED: Maps the user's inputted headline to the cards
+          headline: carouselCardHeadline || adHeadline,
           description: carouselDescription,
           url: globalUrl
         }))
@@ -190,16 +191,28 @@ export default function BulkAdGenerator({ clientId, onGenerateAds }: BulkAdGener
             />
           </div>
           {mode === 'carousel' && (
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/60 mb-1 block">Carousel Card Description</label>
-              <input
-                type="text"
-                className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
-                value={carouselDescription}
-                onChange={e => setCarouselDescription(e.target.value)}
-                placeholder="Description for all cards..."
-              />
-            </div>
+            <>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/60 mb-1 block">Carousel Card Headline</label>
+                <input
+                  type="text"
+                  className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
+                  value={carouselCardHeadline}
+                  onChange={e => setCarouselCardHeadline(e.target.value)}
+                  placeholder="Headline for all cards..."
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/60 mb-1 block">Carousel Card Description</label>
+                <input
+                  type="text"
+                  className="w-full bg-white border border-black/5 rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm"
+                  value={carouselDescription}
+                  onChange={e => setCarouselDescription(e.target.value)}
+                  placeholder="Description for all cards..."
+                />
+              </div>
+            </>
           )}
           
           <div className="pt-2">

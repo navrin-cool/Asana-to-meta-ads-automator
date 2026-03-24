@@ -1148,6 +1148,11 @@ app.post("/api/process-asana", async (req, res) => {
 
       if (objective.toLowerCase() === "sales") {
         adSetPayload.promoted_object = { pixel_id: String(creds.pixelId), custom_event_type: "PURCHASE" };
+        adSetPayload.attribution_spec = [
+          { event_type: "CLICK_THROUGH", window_days: 7 },
+          { event_type: "VIEW_THROUGH", window_days: 1 },
+          { event_type: "ENGAGED_VIEW", window_days: 1 }
+        ];
       } else if (objective === "Reach") {
         adSetPayload.promoted_object = { page_id: String(brand.meta_page_id) };
       }
@@ -1155,120 +1160,128 @@ app.post("/api/process-asana", async (req, res) => {
       const adSetId = await metaService.createAdSet(adSetPayload);
 
       for (const ad of adSet.ads) {
-        addStatus(`Creating Ad: ${ad.adName || ad.headline}...`);
-        let creativeId = null;
-        if (ad.manualAdId) creativeId = await metaService.getExistingCreative(ad.manualAdId);
+        try {
+          addStatus(`Creating Ad: ${ad.adName || ad.headline}...`);
+          let creativeId = null;
+          if (ad.manualAdId) creativeId = await metaService.getExistingCreative(ad.manualAdId);
 
-        let rawCta = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
-        const ctaType = rawCta === "BOOK_NOW" ? "BOOK_TRAVEL" : rawCta;
-        const urlTags = ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`;
-        const finalUrl = ad.url || "https://www.example.com";
+          let rawCta = ad.ctaType || ((objective?.toLowerCase() === "sales") ? "BOOK_NOW" : "LEARN_MORE");
+          const ctaType = rawCta === "BOOK_NOW" ? "BOOK_TRAVEL" : rawCta;
+          const urlTags = ad.customUrlParams || `utm_source=facebook-instagram&utm_medium=gruvi-cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}`;
+          const finalUrl = ad.url || "https://www.example.com";
 
-        if (!creativeId && ad.type === 'video') {
-          let feedVideoId = ad.manualFeedVideoId;
-          if (!feedVideoId) {
-            const tempFile = await downloadFile(ad.feedVideoUrl);
-            feedVideoId = await metaService.uploadVideo(tempFile, true);
-            fs.unlinkSync(tempFile);
-          }
-          await waitForVideoProcessing(feedVideoId, creds.token, addStatus);
+          if (!creativeId && ad.type === 'video') {
+            let feedVideoId = ad.manualFeedVideoId;
+            if (!feedVideoId) {
+              const tempFile = await downloadFile(ad.feedVideoUrl);
+              feedVideoId = await metaService.uploadVideo(tempFile, true);
+              fs.unlinkSync(tempFile);
+            }
+            await waitForVideoProcessing(feedVideoId, creds.token, addStatus);
 
-          const creativePayload: any = {
-            name: `Creative: ${ad.adName || ad.headline}`,
-            url_tags: urlTags,
-            object_story_spec: {
-              page_id: brand.meta_page_id,
-              video_data: {
-                video_id: feedVideoId,
-                image_url: getDownloadUrl(ad.thumbnail),
-                title: ad.headline.substring(0, 255),
-                message: ad.copy,
-                call_to_action: { type: ctaType, value: { link: finalUrl } }
+            const creativePayload: any = {
+              name: `Creative: ${ad.adName || ad.headline}`,
+              url_tags: urlTags,
+              degrees_of_freedom_spec: { multi_advertiser_ad_display: "OPT_OUT" },
+              object_story_spec: {
+                page_id: brand.meta_page_id,
+                video_data: {
+                  video_id: feedVideoId,
+                  image_url: getDownloadUrl(ad.thumbnail),
+                  title: ad.headline.substring(0, 255),
+                  message: ad.copy,
+                  call_to_action: { type: ctaType, value: { link: finalUrl } }
+                }
+              }
+            };
+
+            if (adSet.instagramAccountId) {
+              creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
+            } else if (brand.instagram_page_id) {
+              creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+            }
+
+            creativeId = await metaService.createCreative(creativePayload);
+          } else if (!creativeId && ad.type === 'image') {
+            let imageHash = ad.manualThumbnailHash;
+            if (!imageHash) imageHash = await metaService.uploadImage(ad.thumbnail);
+
+            const creativePayload: any = {
+              name: `Creative: ${ad.adName || ad.headline}`,
+              url_tags: urlTags,
+              degrees_of_freedom_spec: { multi_advertiser_ad_display: "OPT_OUT" },
+              object_story_spec: {
+                page_id: brand.meta_page_id,
+                link_data: {
+                  link: finalUrl,
+                  message: ad.copy,
+                  name: ad.headline.substring(0, 255),
+                  image_hash: imageHash,
+                  call_to_action: { type: ctaType, value: { link: finalUrl } }
+                }
+              }
+            };
+
+            if (adSet.instagramAccountId) {
+              creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
+            } else if (brand.instagram_page_id) {
+              creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+            }
+
+            creativeId = await metaService.createCreative(creativePayload);
+          } else if (!creativeId && ad.type === 'carousel') {
+            const childAttachments: any[] = [];
+            if (ad.carouselCards && ad.carouselCards.length > 0) {
+              for (const card of ad.carouselCards) {
+                const imageHash = await metaService.uploadImage(getDownloadUrl(card.imageUrl));
+                childAttachments.push({
+                  link: card.url || finalUrl,
+                  image_hash: imageHash,
+                  name: card.headline.substring(0, 255),
+                  call_to_action: { type: ctaType, value: { link: card.url || finalUrl } }
+                });
               }
             }
-          };
 
-          if (adSet.instagramAccountId) {
-            creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
-          } else if (brand.instagram_page_id) {
-            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
-          }
-
-          creativeId = await metaService.createCreative(creativePayload);
-        } else if (!creativeId && ad.type === 'image') {
-          let imageHash = ad.manualThumbnailHash;
-          if (!imageHash) imageHash = await metaService.uploadImage(ad.thumbnail);
-
-          const creativePayload: any = {
-            name: `Creative: ${ad.adName || ad.headline}`,
-            url_tags: urlTags,
-            object_story_spec: {
-              page_id: brand.meta_page_id,
-              link_data: {
-                link: finalUrl,
-                message: ad.copy,
-                name: ad.headline.substring(0, 255),
-                image_hash: imageHash,
-                call_to_action: { type: ctaType, value: { link: finalUrl } }
+            const creativePayload: any = {
+              name: `Creative: ${ad.adName || ad.headline}`,
+              url_tags: urlTags,
+              degrees_of_freedom_spec: { multi_advertiser_ad_display: "OPT_OUT" },
+              object_story_spec: {
+                page_id: brand.meta_page_id,
+                link_data: {
+                  link: finalUrl,
+                  message: ad.copy,
+                  child_attachments: childAttachments,
+                  call_to_action: { type: ctaType, value: { link: finalUrl } }
+                }
               }
+            };
+
+            if (adSet.instagramAccountId) {
+              creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
+            } else if (brand.instagram_page_id) {
+              creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
             }
-          };
 
-          if (adSet.instagramAccountId) {
-            creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
-          } else if (brand.instagram_page_id) {
-            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+            creativeId = await metaService.createCreative(creativePayload);
           }
 
-          creativeId = await metaService.createCreative(creativePayload);
-        } else if (!creativeId && ad.type === 'carousel') {
-          const childAttachments: any[] = [];
-          if (ad.carouselCards && ad.carouselCards.length > 0) {
-            for (const card of ad.carouselCards) {
-              const imageHash = await metaService.uploadImage(getDownloadUrl(card.imageUrl));
-              childAttachments.push({
-                link: card.url || finalUrl,
-                image_hash: imageHash,
-                name: card.headline.substring(0, 255),
-                call_to_action: { type: ctaType, value: { link: card.url || finalUrl } }
-              });
+          if (creativeId) {
+            const adPayload: any = {
+              name: ad.adName || `Ad: ${ad.headline}`,
+              adset_id: adSetId,
+              creative: { creative_id: creativeId },
+              status: "ACTIVE"
+            };
+            if (creds.pixelId) {
+              adPayload.tracking_specs = [{ "action.type": ["offsite_conversion"], "fb_pixel": [String(creds.pixelId)] }];
             }
+            await metaService.createAd(adPayload);
           }
-
-          const creativePayload: any = {
-            name: `Creative: ${ad.adName || ad.headline}`,
-            url_tags: urlTags,
-            object_story_spec: {
-              page_id: brand.meta_page_id,
-              link_data: {
-                link: finalUrl,
-                message: ad.copy,
-                child_attachments: childAttachments,
-                call_to_action: { type: ctaType, value: { link: finalUrl } }
-              }
-            }
-          };
-
-          if (adSet.instagramAccountId) {
-            creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
-          } else if (brand.instagram_page_id) {
-            creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
-          }
-
-          creativeId = await metaService.createCreative(creativePayload);
-        }
-
-        if (creativeId) {
-          const adPayload: any = {
-            name: ad.adName || `Ad: ${ad.headline}`,
-            adset_id: adSetId,
-            creative: { creative_id: creativeId },
-            status: "PAUSED"
-          };
-          if (creds.pixelId) {
-            adPayload.tracking_specs = [{ "action.type": ["offsite_conversion"], "fb_pixel": [String(creds.pixelId)] }];
-          }
-          await metaService.createAd(adPayload);
+        } catch (adError: any) {
+          addStatus(`Error creating ad "${ad.adName || ad.headline}": ${adError.message}`);
+          continue;
         }
       }
     }

@@ -1185,6 +1185,7 @@ app.post("/api/process-asana", async (req, res) => {
               contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
               object_story_spec: {
                 page_id: brand.meta_page_id,
+                instagram_actor_id: adSet.instagramAccountId || brand.instagram_page_id,
                 video_data: {
                   video_id: feedVideoId,
                   image_url: getDownloadUrl(ad.thumbnail),
@@ -1210,8 +1211,11 @@ app.post("/api/process-asana", async (req, res) => {
                 if (verticalVideoId) {
                   creativePayload.asset_customization_rules = [
                     {
-                      placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels"],
-                      video_id: verticalVideoId
+                      customization_spec: {
+                        placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels"]
+                      },
+                      video_id: verticalVideoId,
+                      call_to_action: { type: ctaType, value: { link: finalUrl } }
                     }
                   ];
                 }
@@ -1221,13 +1225,23 @@ app.post("/api/process-asana", async (req, res) => {
               }
             }
 
-            if (adSet.instagramAccountId) {
-              creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
-            } else if (brand.instagram_page_id) {
-              creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+            try {
+              creativeId = await metaService.createCreative(creativePayload);
+            } catch (err: any) {
+              const errMsg = err.message || "";
+              if (errMsg.includes("instagram_actor_id") || errMsg.includes("placement")) {
+                addStatus(`Retrying creative creation without problematic fields...`);
+                if (errMsg.includes("instagram_actor_id")) {
+                  delete creativePayload.object_story_spec.instagram_actor_id;
+                }
+                if (errMsg.includes("placement")) {
+                  delete creativePayload.asset_customization_rules;
+                }
+                creativeId = await metaService.createCreative(creativePayload);
+              } else {
+                throw err;
+              }
             }
-
-            creativeId = await metaService.createCreative(creativePayload);
           } else if (!creativeId && ad.type === 'image') {
             let imageHash = ad.manualThumbnailHash;
             if (!imageHash) imageHash = await metaService.uploadImage(ad.thumbnail);
@@ -1238,6 +1252,7 @@ app.post("/api/process-asana", async (req, res) => {
               contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
               object_story_spec: {
                 page_id: brand.meta_page_id,
+                instagram_actor_id: adSet.instagramAccountId || brand.instagram_page_id,
                 link_data: {
                   link: finalUrl,
                   message: ad.copy,
@@ -1248,13 +1263,18 @@ app.post("/api/process-asana", async (req, res) => {
               }
             };
 
-            if (adSet.instagramAccountId) {
-              creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
-            } else if (brand.instagram_page_id) {
-              creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+            try {
+              creativeId = await metaService.createCreative(creativePayload);
+            } catch (err: any) {
+              const errMsg = err.message || "";
+              if (errMsg.includes("instagram_actor_id")) {
+                addStatus(`Retrying creative creation without Instagram ID...`);
+                delete creativePayload.object_story_spec.instagram_actor_id;
+                creativeId = await metaService.createCreative(creativePayload);
+              } else {
+                throw err;
+              }
             }
-
-            creativeId = await metaService.createCreative(creativePayload);
           } else if (!creativeId && ad.type === 'carousel') {
             const childAttachments: any[] = [];
             if (ad.carouselCards && ad.carouselCards.length > 0) {
@@ -1275,6 +1295,7 @@ app.post("/api/process-asana", async (req, res) => {
               contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
               object_story_spec: {
                 page_id: brand.meta_page_id,
+                instagram_actor_id: adSet.instagramAccountId || brand.instagram_page_id,
                 link_data: {
                   link: finalUrl,
                   message: ad.copy,
@@ -1284,13 +1305,18 @@ app.post("/api/process-asana", async (req, res) => {
               }
             };
 
-            if (adSet.instagramAccountId) {
-              creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
-            } else if (brand.instagram_page_id) {
-              creativePayload.object_story_spec.instagram_actor_id = brand.instagram_page_id;
+            try {
+              creativeId = await metaService.createCreative(creativePayload);
+            } catch (err: any) {
+              const errMsg = err.message || "";
+              if (errMsg.includes("instagram_actor_id")) {
+                addStatus(`Retrying creative creation without Instagram ID...`);
+                delete creativePayload.object_story_spec.instagram_actor_id;
+                creativeId = await metaService.createCreative(creativePayload);
+              } else {
+                throw err;
+              }
             }
-
-            creativeId = await metaService.createCreative(creativePayload);
           }
 
           if (creativeId) {

@@ -1195,6 +1195,32 @@ app.post("/api/process-asana", async (req, res) => {
               }
             };
 
+            // Vertical Video Customization
+            if (ad.verticalVideoUrl || ad.manualVerticalVideoId) {
+              try {
+                let verticalVideoId = ad.manualVerticalVideoId;
+                if (!verticalVideoId && ad.verticalVideoUrl) {
+                  addStatus(`Uploading Vertical Video for ${ad.adName || ad.headline}...`);
+                  const tempVerticalFile = await downloadFile(getDownloadUrl(ad.verticalVideoUrl));
+                  verticalVideoId = await metaService.uploadVideo(tempVerticalFile, true);
+                  fs.unlinkSync(tempVerticalFile);
+                  await waitForVideoProcessing(verticalVideoId, creds.token, addStatus);
+                }
+
+                if (verticalVideoId) {
+                  creativePayload.asset_customization_rules = [
+                    {
+                      placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels"],
+                      video_id: verticalVideoId
+                    }
+                  ];
+                }
+              } catch (vError: any) {
+                console.error("Vertical video customization failed:", vError);
+                addStatus(`Warning: Vertical video customization failed for "${ad.adName || ad.headline}". Using standard feed video for all placements.`);
+              }
+            }
+
             if (adSet.instagramAccountId) {
               creativePayload.object_story_spec.instagram_actor_id = adSet.instagramAccountId;
             } else if (brand.instagram_page_id) {

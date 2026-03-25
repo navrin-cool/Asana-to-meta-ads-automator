@@ -1173,7 +1173,8 @@ app.post("/api/process-asana", async (req, res) => {
           if (!creativeId && ad.type === 'video') {
             let feedVideoId = ad.manualFeedVideoId;
             if (!feedVideoId) {
-              const tempFile = await downloadFile(ad.feedVideoUrl);
+              addStatus(`Uploading Feed Video for ${ad.adName || ad.headline}...`);
+              const tempFile = await downloadFile(getDownloadUrl(ad.feedVideoUrl));
               feedVideoId = await metaService.uploadVideo(tempFile, true);
               fs.unlinkSync(tempFile);
             }
@@ -1229,12 +1230,15 @@ app.post("/api/process-asana", async (req, res) => {
               creativeId = await metaService.createCreative(creativePayload);
             } catch (err: any) {
               const errMsg = err.message || "";
-              if (errMsg.includes("instagram_actor_id") || errMsg.includes("placement")) {
-                addStatus(`Retrying creative creation without problematic fields...`);
+              const errCode = err.code || (err.response?.data?.error?.code);
+              const errSubcode = err.error_subcode || (err.response?.data?.error?.error_subcode);
+              
+              if (errMsg.includes("instagram_actor_id") || errMsg.includes("placement") || errCode === 1885516 || errSubcode === 1885516) {
+                addStatus(`Warning: Creative creation failed (Error ${errCode || 'unknown'}/${errSubcode || 'unknown'}). Retrying without problematic fields...`);
                 if (errMsg.includes("instagram_actor_id")) {
                   delete creativePayload.object_story_spec.instagram_actor_id;
                 }
-                if (errMsg.includes("placement")) {
+                if (errMsg.includes("placement") || errCode === 1885516 || errSubcode === 1885516) {
                   delete creativePayload.asset_customization_rules;
                 }
                 creativeId = await metaService.createCreative(creativePayload);

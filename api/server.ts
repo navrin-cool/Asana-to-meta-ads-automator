@@ -1182,6 +1182,7 @@ app.post("/api/process-asana", async (req, res) => {
             const creativePayload: any = {
               name: `Creative: ${ad.adName || ad.headline}`,
               url_tags: urlTags,
+              contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
               object_story_spec: {
                 page_id: brand.meta_page_id,
                 video_data: {
@@ -1208,6 +1209,7 @@ app.post("/api/process-asana", async (req, res) => {
             const creativePayload: any = {
               name: `Creative: ${ad.adName || ad.headline}`,
               url_tags: urlTags,
+              contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
               object_story_spec: {
                 page_id: brand.meta_page_id,
                 link_data: {
@@ -1244,6 +1246,7 @@ app.post("/api/process-asana", async (req, res) => {
             const creativePayload: any = {
               name: `Creative: ${ad.adName || ad.headline}`,
               url_tags: urlTags,
+              contextual_multi_ads: { enroll_status: ad.multiAdvertiserAds ? "OPT_IN" : "OPT_OUT" },
               object_story_spec: {
                 page_id: brand.meta_page_id,
                 link_data: {

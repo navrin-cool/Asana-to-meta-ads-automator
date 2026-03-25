@@ -23,7 +23,7 @@ export const clientsConfig: Record<string, ClientConfig> = {
       meta: {
         adAccountId: process.env.META_AD_ACCOUNT_ID || "",
         pageId: process.env.META_PAGE_ID || "",
-        instagramUserId: "102615919157239",
+        instagramUserId: "17841400293047168",
         pixelId: "627590211536590",
         accessToken: process.env.META_ACCESS_TOKEN || "",
       }

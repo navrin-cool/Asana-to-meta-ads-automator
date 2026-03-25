@@ -44,6 +44,8 @@ interface Ad {
   feedVideoUrl?: string;
   verticalVideoUrl?: string;
   carouselCards?: CarouselCard[];
+  instagramActorId?: string;
+  rawIdentitySource?: string;
 }
 
 interface Audience {
@@ -1589,6 +1591,26 @@ export default function App() {
                                     existingHash={ad.manualThumbnailHash}
                                     onUpload={(hash) => updateAd(adSet.id, ad.id, { manualThumbnailHash: hash })}
                                   />
+                                  <div className="space-y-4">
+                                    <div>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Imported Instagram ID</label>
+                                      <input
+                                        type="text"
+                                        readOnly
+                                        className="w-full bg-zinc-900 text-green-400 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-mono"
+                                        value={ad.instagramActorId || 'N/A'}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#5A5A40]/40 mb-2 block">Identity Detection Path</label>
+                                      <input
+                                        type="text"
+                                        readOnly
+                                        className="w-full bg-zinc-900 text-green-400 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#5A5A40] outline-none text-sm font-mono"
+                                        value={ad.rawIdentitySource || 'Not found in creative'}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
 
                                 {ad.type === 'video' && (

@@ -646,7 +646,8 @@ export default function App() {
     setIsLaunching(true);
     setError(null);
     setSuccess(null);
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] [PAYLOAD DEBUG] Payload generated. Submitting to Meta....`]);
+    setLogs(['Initializing launch process...']);
+
     try {
       const response = await fetch('/api/process-asana', {
         method: 'POST',
@@ -664,12 +665,10 @@ export default function App() {
       }
       if (data.logs) setLogs(data.logs);
       if (!response.ok) {
-        const errorMsg = typeof data.error === 'object' 
-          ? JSON.stringify(data.error, null, 2) 
-          : (data.error || 'Failed to launch campaign');
+        const errorMsg = data.error || 'Failed to launch campaign';
         
         // Check for specific video upload failure
-        if (typeof errorMsg === 'string' && errorMsg.startsWith('VIDEO_UPLOAD_FAILED:')) {
+        if (errorMsg.startsWith('VIDEO_UPLOAD_FAILED:')) {
           const [_, type, url] = errorMsg.split(':');
           setError(`Automatic video upload failed for ${type} video. Please upload the file manually below.`);
           // We don't throw here, we want to show the manual upload UI
@@ -687,22 +686,6 @@ export default function App() {
       setIsLaunching(false);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleCopyPayload = async () => {
-    try {
-      const response = await fetch('/api/debug-payload');
-      const data = await response.json();
-      if (data.payload) {
-        await navigator.clipboard.writeText(JSON.stringify(data.payload, null, 2));
-        setSuccess('Last Meta payload copied to clipboard!');
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError('No payload found to copy.');
-      }
-    } catch (err: any) {
-      setError('Failed to fetch debug payload: ' + err.message);
     }
   };
 
@@ -1267,22 +1250,6 @@ export default function App() {
                             />
                           </div>
                         )}
-                      </div>
-
-                      {/* Developer Tools */}
-                      <div className="mt-12 pt-8 border-t border-[#5A5A40]/10">
-                        <div className="flex items-center gap-2 mb-4">
-                          <Settings size={14} className="text-[#5A5A40]/40" />
-                          <h3 className="text-xs font-bold uppercase tracking-widest text-[#5A5A40]/40">Developer Tools</h3>
-                        </div>
-                        <div className="flex gap-4">
-                          <button
-                            onClick={handleCopyPayload}
-                            className="flex items-center gap-2 px-4 py-2 bg-[#5A5A40]/5 hover:bg-[#5A5A40]/10 text-[#5A5A40] rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
-                          >
-                            <Copy size={14} /> Copy Last Meta Payload
-                          </button>
-                        </div>
                       </div>
                     </section>
                   )}

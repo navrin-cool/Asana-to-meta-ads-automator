@@ -1193,26 +1193,13 @@ app.post("/api/process-asana", async (req, res) => {
 
           if (!creativeId && ad.type === 'video') {
             let feedVideoId = ad.manualFeedVideoId;
-            if (!feedVideoId && ad.feedVideoUrl) {
+            if (!feedVideoId) {
               addStatus(`Uploading Feed Video for ${ad.adName || ad.headline}...`);
               const tempFile = await downloadFile(getDownloadUrl(ad.feedVideoUrl));
               feedVideoId = await metaService.uploadVideo(tempFile, true);
               fs.unlinkSync(tempFile);
-              await waitForVideoProcessing(feedVideoId, creds.token, addStatus);
             }
-
-            let verticalVideoId = ad.manualVerticalVideoId;
-            if (!verticalVideoId && ad.verticalVideoUrl) {
-              addStatus(`Uploading Vertical Video for ${ad.adName || ad.headline}...`);
-              const tempVerticalFile = await downloadFile(getDownloadUrl(ad.verticalVideoUrl));
-              verticalVideoId = await metaService.uploadVideo(tempVerticalFile, true);
-              fs.unlinkSync(tempVerticalFile);
-              await waitForVideoProcessing(verticalVideoId, creds.token, addStatus);
-            }
-
-            addStatus("[DEBUG] Base Asset: Vertical | Feed Override: Declared with Thumbnail");
-            const baseVideoId = verticalVideoId || feedVideoId;
-            const thumbnailUrl = getDownloadUrl(ad.thumbnail);
+            await waitForVideoProcessing(feedVideoId, creds.token, addStatus);
 
             const creativePayload: any = {
               name: `Creative: ${ad.adName || ad.headline}`,
@@ -1224,25 +1211,42 @@ app.post("/api/process-asana", async (req, res) => {
                 instagram_actor_id: identityId,
                 instagram_user_id: identityId,
                 video_data: {
-                  video_id: baseVideoId, // Standard base (covers Stories/Reels)
-                  image_url: thumbnailUrl,
+                  video_id: feedVideoId,
+                  image_url: getDownloadUrl(ad.thumbnail),
                   title: ad.headline.substring(0, 255),
                   message: ad.copy,
                   call_to_action: { type: ctaType, value: { link: finalUrl } }
                 }
-              },
-              asset_customization_rules: [
-                {
-                  customization_spec: {
-                    placements: ["facebook_feed", "instagram_feed"]
-                  },
-                  video_data: { 
-                    video_id: feedVideoId,
-                    image_url: thumbnailUrl // Declare thumbnail again for the override
-                  }
-                }
-              ]
+              }
             };
+
+            // Vertical Video Customization
+            if (ad.verticalVideoUrl || ad.manualVerticalVideoId) {
+              try {
+                let verticalVideoId = ad.manualVerticalVideoId;
+                if (!verticalVideoId && ad.verticalVideoUrl) {
+                  addStatus(`Uploading Vertical Video for ${ad.adName || ad.headline}...`);
+                  const tempVerticalFile = await downloadFile(getDownloadUrl(ad.verticalVideoUrl));
+                  verticalVideoId = await metaService.uploadVideo(tempVerticalFile, true);
+                  fs.unlinkSync(tempVerticalFile);
+                  await waitForVideoProcessing(verticalVideoId, creds.token, addStatus);
+                }
+
+                if (verticalVideoId) {
+                  creativePayload.asset_customization_rules = [
+                    {
+                      customization_spec: {
+                        placements: ["facebook_story", "instagram_story", "instagram_reels", "facebook_reels"]
+                      },
+                      video_id: verticalVideoId
+                    }
+                  ];
+                }
+              } catch (vError: any) {
+                console.error("Vertical video customization failed:", vError);
+                addStatus(`Warning: Vertical video customization failed for "${ad.adName || ad.headline}". Using standard feed video for all placements.`);
+              }
+            }
 
             try {
               addStatus("[DEBUG] Attempting creative creation with Identity: " + identityId);
@@ -1250,16 +1254,11 @@ app.post("/api/process-asana", async (req, res) => {
             } catch (err: any) {
               const errMsg = err.message || "";
               const errCode = err.code || (err.response?.data?.error?.code);
+              const errSubcode = err.error_subcode || (err.response?.data?.error?.error_subcode);
               
-              if (errCode === 100 || errMsg.includes("Invalid Instagram ID") || errMsg.includes("instagram_user_id")) {
-                addStatus("[DEBUG] IG ID Invalid. Retrying with clean fallback...");
-                // DEEP DELETE: Remove identity from everywhere
-                delete creativePayload.instagram_user_id;
-                if (creativePayload.object_story_spec) {
-                  delete creativePayload.object_story_spec.instagram_actor_id;
-                  delete creativePayload.object_story_spec.instagram_user_id;
-                }
-                // Retry with mapping intact but identities removed
+              if (errMsg.includes("placement") || errCode === 1885516 || errSubcode === 1885516) {
+                addStatus(`Warning: Creative creation failed (Error ${errCode || 'unknown'}/${errSubcode || 'unknown'}). Retrying without problematic fields...`);
+                delete creativePayload.asset_customization_rules;
                 creativeId = await metaService.createCreative(creativePayload);
               } else {
                 throw err;
@@ -1292,20 +1291,7 @@ app.post("/api/process-asana", async (req, res) => {
               addStatus("[DEBUG] Attempting creative creation with Identity: " + identityId);
               creativeId = await metaService.createCreative(creativePayload);
             } catch (err: any) {
-              const errMsg = err.message || "";
-              const errCode = err.code || (err.response?.data?.error?.code);
-              
-              if (errCode === 100 || errMsg.includes("Invalid Instagram ID")) {
-                addStatus("[DEBUG] IG ID Invalid. Retrying with Facebook Page identity fallback....");
-                delete creativePayload.instagram_user_id;
-                if (creativePayload.object_story_spec) {
-                  delete creativePayload.object_story_spec.instagram_actor_id;
-                  delete creativePayload.object_story_spec.instagram_user_id;
-                }
-                creativeId = await metaService.createCreative(creativePayload);
-              } else {
-                throw err;
-              }
+              throw err;
             }
           } else if (!creativeId && ad.type === 'carousel') {
             const childAttachments: any[] = [];
@@ -1343,20 +1329,7 @@ app.post("/api/process-asana", async (req, res) => {
               addStatus("[DEBUG] Attempting creative creation with Identity: " + identityId);
               creativeId = await metaService.createCreative(creativePayload);
             } catch (err: any) {
-              const errMsg = err.message || "";
-              const errCode = err.code || (err.response?.data?.error?.code);
-              
-              if (errCode === 100 || errMsg.includes("Invalid Instagram ID")) {
-                addStatus("[DEBUG] IG ID Invalid. Retrying with Facebook Page identity fallback....");
-                delete creativePayload.instagram_user_id;
-                if (creativePayload.object_story_spec) {
-                  delete creativePayload.object_story_spec.instagram_actor_id;
-                  delete creativePayload.object_story_spec.instagram_user_id;
-                }
-                creativeId = await metaService.createCreative(creativePayload);
-              } else {
-                throw err;
-              }
+              throw err;
             }
           }
 
